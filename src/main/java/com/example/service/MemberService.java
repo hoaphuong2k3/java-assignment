@@ -141,12 +141,18 @@ public class MemberService {
         return memberDAO.countTotal();
     }
 
+    /**
+     * Đồng bộ trạng thái hết hạn thẻ: ACTIVE hoặc SUSPENDED mà đã quá {@code expiry_date} → EXPIRED.
+     * Đọc giả bị khóa (SUSPENDED) không cần mở khóa: đến lúc hết hạn thẻ vẫn tự về EXPIRED để có thể gia hạn có phí.
+     */
     public void syncExpiredStatuses() {
         List<Member> all = memberDAO.findAll();
         for (Member m : all) {
-            if (m.getStatus() == Member.Status.ACTIVE
-                    && m.getExpiryDate() != null
-                    && LocalDate.now().isAfter(m.getExpiryDate())) {
+            if (m.getExpiryDate() == null) continue;
+            if (m.getStatus() != Member.Status.ACTIVE && m.getStatus() != Member.Status.SUSPENDED) {
+                continue;
+            }
+            if (LocalDate.now().isAfter(m.getExpiryDate())) {
                 m.setStatus(Member.Status.EXPIRED);
                 memberDAO.update(m);
             }

@@ -246,14 +246,25 @@ class MemberServiceTest {
     }
 
     @Test
-    void syncExpiredStatuses_alreadySuspended_noUpdate() {
+    void syncExpiredStatuses_suspendedAndPastExpiry_updatesToExpired() {
         existingMember.setStatus(Member.Status.SUSPENDED);
-        existingMember.setExpiryDate(LocalDate.now().minusYears(1));
+        existingMember.setExpiryDate(LocalDate.now().minusDays(1));
         when(memberDAO.findAll()).thenReturn(List.of(existingMember));
 
         memberService.syncExpiredStatuses();
 
-        // SUSPENDED members are not touched
+        assertEquals(Member.Status.EXPIRED, existingMember.getStatus());
+        verify(memberDAO).update(existingMember);
+    }
+
+    @Test
+    void syncExpiredStatuses_suspendedButCardNotExpiredYet_noUpdate() {
+        existingMember.setStatus(Member.Status.SUSPENDED);
+        existingMember.setExpiryDate(LocalDate.now().plusDays(30));
+        when(memberDAO.findAll()).thenReturn(List.of(existingMember));
+
+        memberService.syncExpiredStatuses();
+
         verify(memberDAO, never()).update(any());
         assertEquals(Member.Status.SUSPENDED, existingMember.getStatus());
     }
