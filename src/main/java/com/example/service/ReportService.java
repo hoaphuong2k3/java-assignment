@@ -133,6 +133,67 @@ public class ReportService {
         return result;
     }
 
+    /**
+     * Tổng phí gia hạn thẻ đọc (ghi trong fines, lý do chứa "Gia hạn thẻ đọc") trong năm lịch.
+     */
+    public Map<String, Object> getCardRenewalFineSummary(int year) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        String sql = """
+            SELECT
+              COUNT(*) AS cnt,
+              COALESCE(SUM(amount), 0) AS total,
+              COALESCE(SUM(CASE WHEN paid THEN amount ELSE 0 END), 0) AS paid_sum,
+              COALESCE(SUM(CASE WHEN NOT paid THEN amount ELSE 0 END), 0) AS unpaid_sum
+            FROM fines
+            WHERE YEAR(created_at) = ?
+              AND reason LIKE '%Gia hạn thẻ đọc%'
+            """;
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setInt(1, year);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                map.put("count", rs.getLong("cnt"));
+                map.put("total", rs.getBigDecimal("total"));
+                map.put("paidSum", rs.getBigDecimal("paid_sum"));
+                map.put("unpaidSum", rs.getBigDecimal("unpaid_sum"));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Error loading renewal fee stats", e);
+        }
+        if (map.isEmpty()) {
+            map.put("count", 0L);
+            map.put("total", BigDecimal.ZERO);
+            map.put("paidSum", BigDecimal.ZERO);
+            map.put("unpaidSum", BigDecimal.ZERO);
+        }
+        return map;
+    }
+
+    /** Đếm đọc giả đăng ký (join_date) trong khoảng đóng; nếu from > to thì đổi chỗ. */
+    public long countMembersJoinedBetween(java.time.LocalDate from, java.time.LocalDate to) {
+        if (from == null || to == null) return 0;
+        java.time.LocalDate a = from;
+        java.time.LocalDate b = to;
+        if (a.isAfter(b)) {
+            java.time.LocalDate t = a;
+            a = b;
+            b = t;
+        }
+        String sql = """
+            SELECT COUNT(*) FROM members
+            WHERE deleted_at IS NULL AND join_date BETWEEN ? AND ?
+            """;
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setDate(1, Date.valueOf(a));
+            ps.setDate(2, Date.valueOf(b));
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getLong(1);
+        } catch (SQLException e) {
+            throw new RuntimeException("Error counting members by join date", e);
+        }
+        return 0;
+    }
+
     private long queryLong(String sql) throws SQLException {
         try (Statement st = getConn().createStatement();
              ResultSet rs = st.executeQuery(sql)) {

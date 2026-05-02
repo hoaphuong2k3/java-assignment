@@ -17,7 +17,6 @@ import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.LocalDate;
@@ -62,7 +61,7 @@ public class BorrowController {
     @FXML
     public void initialize() {
         statusFilter.setItems(FXCollections.observableArrayList(
-            "Tất cả", "BORROWING", "RETURNED", "OVERDUE", "LOST"));
+            "Tất cả", "Đang mượn", "Đã trả", "Quá hạn", "Mất sách"));
         statusFilter.setValue("Tất cả");
         setupColumns();
         searchField.textProperty().addListener((obs, o, n) -> applyFilter());
@@ -91,53 +90,22 @@ public class BorrowController {
         colNote.setCellValueFactory(c -> new SimpleStringProperty(
             c.getValue().getNotes() != null ? c.getValue().getNotes() : ""));
 
-        // Rich status cell
+        // Chỉ hiển thị nhãn trạng thái gọn (chi tiết phí ghi trong cột ghi chú / hộp thoại).
         colStatus.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getStatus().name()));
         colStatus.setCellFactory(col -> new TableCell<>() {
             @Override protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) { setGraphic(null); setText(null); return; }
-                int idx = getIndex();
-                if (idx < 0 || idx >= getTableView().getItems().size()) {
-                    setGraphic(null); setText(null); return;
-                }
-                BorrowRecord r = getTableView().getItems().get(idx);
                 Label badge = new Label();
-                VBox box = new VBox(2, badge);
+                badge.getStyleClass().clear();
                 switch (item) {
-                    case "RETURNED"  -> { badge.setText("Đã trả");  badge.getStyleClass().add("badge-success"); }
+                    case "RETURNED"  -> { badge.setText("Đã trả");    badge.getStyleClass().add("badge-success"); }
                     case "BORROWING" -> { badge.setText("Đang mượn"); badge.getStyleClass().add("badge-info");    }
-                    case "OVERDUE"   -> {
-                        long days = r.getOverdueDays();
-                        badge.setText("Quá hạn"); badge.getStyleClass().add("badge-danger");
-                        if (days > 0) {
-                            BigDecimal fee = BorrowService.FINE_PER_DAY.multiply(BigDecimal.valueOf(days));
-                            Label dLabel = new Label("Quá hạn " + days + " ngày");
-                            dLabel.setStyle("-fx-font-size:10px; -fx-text-fill:#B91C1C;");
-                            Label fLabel = new Label("Phí phạt: " + fmt.format(fee) + "đ");
-                            fLabel.setStyle("-fx-font-size:10px; -fx-text-fill:#D97706;");
-                            box.getChildren().addAll(dLabel, fLabel);
-                        }
-                    }
-                    case "LOST" -> {
-                        long days = r.getOverdueDays();
-                        badge.setText("Mất sách"); badge.getStyleClass().add("badge-warning");
-                        Label lLabel = new Label("Đơn giá bồi thường: " + fmt.format(BorrowService.LOST_BOOK_FEE) + "đ");
-                        lLabel.setStyle("-fx-font-size:10px; -fx-text-fill:#DC2626;");
-                        box.getChildren().add(lLabel);
-                        if (days > 0) {
-                            BigDecimal fee = BorrowService.FINE_PER_DAY.multiply(BigDecimal.valueOf(days));
-                            Label dLabel = new Label("Quá hạn " + days + " ngày");
-                            dLabel.setStyle("-fx-font-size:10px; -fx-text-fill:#B91C1C;");
-                            Label fLabel = new Label("Phí phạt (ước tính): " + fmt.format(fee) + "đ");
-                            fLabel.setStyle("-fx-font-size:10px; -fx-text-fill:#D97706;");
-                            box.getChildren().addAll(dLabel, fLabel);
-                        }
-                    }
+                    case "OVERDUE"   -> { badge.setText("Quá hạn");   badge.getStyleClass().add("badge-danger");  }
+                    case "LOST"      -> { badge.setText("Mất sách");  badge.getStyleClass().add("badge-warning"); }
                     default -> badge.setText(item);
                 }
-                box.setStyle("-fx-padding: 2 0 2 0;");
-                setGraphic(box);
+                setGraphic(badge);
                 setText(null);
             }
         });
@@ -178,6 +146,17 @@ public class BorrowController {
         });
     }
 
+    private static boolean matchesStatusFilter(BorrowRecord r, String stVal) {
+        if (stVal == null || "Tất cả".equals(stVal)) return true;
+        return switch (stVal) {
+            case "Đang mượn" -> r.getStatus() == BorrowRecord.Status.BORROWING;
+            case "Đã trả" -> r.getStatus() == BorrowRecord.Status.RETURNED;
+            case "Quá hạn" -> r.getStatus() == BorrowRecord.Status.OVERDUE;
+            case "Mất sách" -> r.getStatus() == BorrowRecord.Status.LOST;
+            default -> r.getStatus().name().equals(stVal);
+        };
+    }
+
     // ── Filter / Pagination ─────────────────────────────────────────────────
 
     private void applyFilter() {
@@ -187,8 +166,7 @@ public class BorrowController {
         LocalDate to   = toDatePicker.getValue();
         filteredList = masterList.stream()
             .filter(r -> {
-                boolean stOk = stVal == null || "Tất cả".equals(stVal)
-                    || r.getStatus().name().equals(stVal);
+                boolean stOk = matchesStatusFilter(r, stVal);
                 boolean kwOk = kw.isEmpty()
                     || r.getMemberName().toLowerCase().contains(kw)
                     || r.getMemberCode().toLowerCase().contains(kw)

@@ -96,6 +96,50 @@ public class CategoryDAO {
         }
     }
 
+    /** Trùng tên (không phân biệt hoa thường), bỏ qua id khi sửa. */
+    public boolean existsNameForOtherCategory(String name, Integer excludeCategoryId) {
+        if (name == null || name.isBlank()) return false;
+        String norm = name.trim();
+        String sql = """
+            SELECT COUNT(*) FROM categories
+            WHERE deleted_at IS NULL AND LOWER(TRIM(name)) = LOWER(?)
+            AND (? IS NULL OR id <> ?)
+            """;
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setString(1, norm);
+            if (excludeCategoryId == null) {
+                ps.setNull(2, Types.INTEGER);
+                ps.setNull(3, Types.INTEGER);
+            } else {
+                ps.setInt(2, excludeCategoryId);
+                ps.setInt(3, excludeCategoryId);
+            }
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getLong(1) > 0;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error checking category name uniqueness", e);
+        }
+        return false;
+    }
+
+    /** Phiếu BORROWING/OVERDUE của sách thuộc danh mục (chặn xóa danh mục/sách đang mượn). */
+    public int countBorrowingOrOverdueInCategory(int categoryId) {
+        String sql = """
+            SELECT COUNT(*) FROM borrow_records br
+            INNER JOIN books b ON br.book_id = b.id
+            WHERE b.category_id = ? AND b.deleted_at IS NULL
+              AND br.status IN ('BORROWING','OVERDUE')
+            """;
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setInt(1, categoryId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getInt(1);
+        } catch (SQLException e) {
+            throw new RuntimeException("Error counting active borrows in category", e);
+        }
+        return 0;
+    }
+
     public long countBooksInCategory(int categoryId) {
         String sql = "SELECT COUNT(*) FROM books WHERE category_id=? AND deleted_at IS NULL";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {

@@ -12,8 +12,11 @@ import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 
+import java.math.BigDecimal;
+import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -25,6 +28,11 @@ public class ReportController {
     @FXML private Label lblTotalBooks;
     @FXML private Label lblActiveMembers;
     @FXML private Label lblOverdue;
+    @FXML private Label lblRenewalFees;
+
+    @FXML private DatePicker memberJoinFrom;
+    @FXML private DatePicker memberJoinTo;
+    @FXML private Label lblJoinCount;
 
     @FXML private BarChart<String, Number> monthlyChart;
     @FXML private CategoryAxis monthlyXAxis;
@@ -63,6 +71,9 @@ public class ReportController {
         yearCombo.setValue(currentYear);
         yearCombo.setOnAction(e -> loadData());
 
+        memberJoinFrom.valueProperty().addListener((o, a, n) -> refreshJoinCountOnly());
+        memberJoinTo.valueProperty().addListener((o, a, n) -> refreshJoinCountOnly());
+
         setupTopBooksTable();
         setupCategoryTable();
         setupTopMembersTable();
@@ -97,6 +108,18 @@ public class ReportController {
             lblOverdue.setText("—");
         }
 
+        NumberFormat money = NumberFormat.getNumberInstance(new Locale("vi", "VN"));
+        try {
+            Map<String, Object> renewal = reportService.getCardRenewalFineSummary(year);
+            BigDecimal total = (BigDecimal) renewal.get("total");
+            long rc = ((Number) renewal.get("count")).longValue();
+            lblRenewalFees.setText(money.format(total.longValue()) + "đ · " + rc + " phiếu");
+        } catch (Exception e) {
+            lblRenewalFees.setText("—");
+        }
+
+        refreshJoinCountOnly();
+
         // Top books
         List<Map<String, Object>> topBooks = reportService.getTopBorrowedBooks(10);
         AtomicInteger rank = new AtomicInteger(1);
@@ -128,6 +151,17 @@ public class ReportController {
                 ((Number) m.get("borrowCount")).doubleValue() / maxMembers));
         });
         topMembersTable.setItems(FXCollections.observableArrayList(topMembers));
+    }
+
+    private void refreshJoinCountOnly() {
+        LocalDate jf = memberJoinFrom.getValue();
+        LocalDate jt = memberJoinTo.getValue();
+        if (jf != null && jt != null) {
+            long jc = reportService.countMembersJoinedBetween(jf, jt);
+            lblJoinCount.setText(jc + " đọc giả đăng ký (mở thẻ) trong khoảng ngày đã chọn");
+        } else {
+            lblJoinCount.setText("Chọn từ ngày và đến ngày để xem số thẻ mở");
+        }
     }
 
     private void populateMonthlyChart(List<Map<String, Object>> monthly) {

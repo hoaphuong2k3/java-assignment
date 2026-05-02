@@ -13,10 +13,18 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
 public class BookController {
+
+    private enum BookListSort {
+        /** Mặc định khi mở trang / lọc / xóa / sửa. */
+        AZ_BY_TITLE,
+        /** Chỉ sau khi thêm sách mới: mới nhất lên đầu (theo created_at). */
+        NEWEST_FIRST
+    }
 
     @FXML private TextField    searchField;
     @FXML private ComboBox<Category> categoryFilter;
@@ -38,6 +46,7 @@ public class BookController {
     private int          currentPage  = 0;
     private List<Book>   masterList   = new ArrayList<>();
     private List<Book>   filteredList = new ArrayList<>();
+    private BookListSort bookListSort = BookListSort.AZ_BY_TITLE;
 
     private final BookService     bookService     = new BookService();
     private final CategoryDAO     categoryDAO     = new CategoryDAO();
@@ -47,8 +56,14 @@ public class BookController {
     public void initialize() {
         setupColumns();
         loadCategories();
-        searchField.textProperty().addListener((obs, o, n) -> applyFilter());
-        categoryFilter.valueProperty().addListener((obs, o, n) -> applyFilter());
+        searchField.textProperty().addListener((obs, o, n) -> {
+            bookListSort = BookListSort.AZ_BY_TITLE;
+            applyFilter(true);
+        });
+        categoryFilter.valueProperty().addListener((obs, o, n) -> {
+            bookListSort = BookListSort.AZ_BY_TITLE;
+            applyFilter(true);
+        });
         loadBooks();
     }
 
@@ -91,20 +106,31 @@ public class BookController {
         categoryFilter.getItems().addAll(categories);
     }
 
-    private void applyFilter() {
+    /** @param resetPage true khi đổi bộ lọc/tìm kiếm; false khi làm mới dữ liệu (giữ số trang, tự giật lù nếu trang trống). */
+    private void applyFilter(boolean resetPage) {
         String kw       = searchField.getText().toLowerCase().trim();
         Category cat    = categoryFilter.getValue();
+        Comparator<Book> order = bookListSort == BookListSort.NEWEST_FIRST
+            ? Comparator.comparing(Book::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed()
+                .thenComparing(Book::getTitle, String.CASE_INSENSITIVE_ORDER)
+            : Comparator.comparing(Book::getTitle, String.CASE_INSENSITIVE_ORDER);
         filteredList = masterList.stream()
             .filter(b -> (cat == null
                           || (b.getCategoryId() != null && b.getCategoryId().intValue() == cat.getId()))
                       && (kw.isEmpty()
                           || b.getTitle().toLowerCase().contains(kw)
                           || b.getAuthor().toLowerCase().contains(kw)
-                          || b.getIsbn().toLowerCase().contains(kw)))
-            .sorted(java.util.Comparator.comparing(Book::getTitle))
+                          || (b.getIsbn() != null && b.getIsbn().toLowerCase().contains(kw))))
+            .sorted(order)
             .toList();
-        currentPage = 0;
+        if (resetPage) currentPage = 0;
+        else clampCurrentPage();
         showPage();
+    }
+
+    private void clampCurrentPage() {
+        int totalPages = Math.max(1, (int) Math.ceil((double) filteredList.size() / PAGE_SIZE));
+        if (currentPage >= totalPages) currentPage = Math.max(0, totalPages - 1);
     }
 
     private void showPage() {
@@ -123,11 +149,22 @@ public class BookController {
     @FXML private void prevPage() { if (currentPage > 0) { currentPage--; showPage(); } }
     @FXML private void nextPage() { if ((currentPage + 1) * PAGE_SIZE < filteredList.size()) { currentPage++; showPage(); } }
 
-    @FXML private void handleSearch() { applyFilter(); }
+    @FXML private void handleSearch() {
+        bookListSort = BookListSort.AZ_BY_TITLE;
+        applyFilter(true);
+    }
 
     private void loadBooks() {
+        bookListSort = BookListSort.AZ_BY_TITLE;
         masterList = bookService.getAllBooks();
-        applyFilter();
+        applyFilter(false);
+    }
+
+    /** Sau thêm mới: sắp mới nhất trước, về trang 1 để thấy ngay bản ghi vừa thêm. */
+    private void loadBooksAfterAdd() {
+        bookListSort = BookListSort.NEWEST_FIRST;
+        masterList = bookService.getAllBooks();
+        applyFilter(true);
     }
 
     @FXML
@@ -173,8 +210,11 @@ public class BookController {
         TextField isbnField     = new TextField(isEdit ? book.getIsbn()      : "");
         TextField titleField    = new TextField(isEdit ? book.getTitle()     : "");
         TextField authorField   = new TextField(isEdit ? book.getAuthor()    : "");
-        TextField publisherField= new TextField(isEdit ? book.getPublisher() : "");
+        TextField publisherField = new TextField(isEdit && book.getPublisher() != null ? book.getPublisher() : "");
         TextField yearField     = new TextField(isEdit && book.getPublishYear() != null ? String.valueOf(book.getPublishYear()) : "");
+        int yearMin = BookService.PUBLISH_YEAR_MIN;
+        int yearMax = BookService.publishYearMaxInclusive();
+        yearField.setPromptText("VD: 2024  ·  " + yearMin + "–" + yearMax + " (4 số), để trống nếu không có");
         TextField copiesField   = new TextField(isEdit ? String.valueOf(book.getTotalCopies()) : "1");
         TextArea  descArea      = new TextArea(isEdit ? book.getDescription() : "");
         ComboBox<Category> catCombo = new ComboBox<>();
@@ -190,9 +230,9 @@ public class BookController {
         grid.add(new Label("ISBN:"),       0, 0); grid.add(isbnField,      1, 0);
         grid.add(new Label("Tên sách *:"), 0, 1); grid.add(titleField,     1, 1);
         grid.add(new Label("Tác giả *:"),  0, 2); grid.add(authorField,    1, 2);
-        grid.add(new Label("NXB:"),        0, 3); grid.add(publisherField,  1, 3);
+        grid.add(new Label("NXB — nhà xuất bản *:"), 0, 3); grid.add(publisherField, 1, 3);
         grid.add(new Label("Năm XB:"),     0, 4); grid.add(yearField,      1, 4);
-        grid.add(new Label("Danh mục:"),   0, 5); grid.add(catCombo,       1, 5);
+        grid.add(new Label("Danh mục *:"), 0, 5); grid.add(catCombo,       1, 5);
         grid.add(new Label("Số lượng *:"), 0, 6); grid.add(copiesField,    1, 6);
         grid.add(new Label("Mô tả:"),      0, 7); grid.add(descArea,       1, 7);
 
@@ -217,6 +257,30 @@ public class BookController {
                 errs.add("• Tác giả không được để trống.");
                 authorField.setStyle("-fx-border-color: #E11D48;");
             }
+            if (publisherField.getText().isBlank()) {
+                errs.add("• Nhà xuất bản (NXB) không được để trống.");
+                publisherField.setStyle("-fx-border-color: #E11D48;");
+            }
+            if (catCombo.getValue() == null) {
+                errs.add("• Vui lòng chọn danh mục sách.");
+                catCombo.setStyle("-fx-border-color: #E11D48;");
+            }
+            String yStr = yearField.getText().trim();
+            if (!yStr.isEmpty()) {
+                if (!yStr.chars().allMatch(Character::isDigit)) {
+                    errs.add("• Năm xuất bản chỉ được nhập chữ số (không chữ, khoảng trắng, ký tự lạ).");
+                    yearField.setStyle("-fx-border-color: #E11D48;");
+                } else if (yStr.length() != 4) {
+                    errs.add("• Năm xuất bản phải đủ 4 chữ số (ví dụ: 2024).");
+                    yearField.setStyle("-fx-border-color: #E11D48;");
+                } else {
+                    int y = Integer.parseInt(yStr);
+                    if (y < yearMin || y > yearMax) {
+                        errs.add("• Năm xuất bản phải từ " + yearMin + " đến " + yearMax + ".");
+                        yearField.setStyle("-fx-border-color: #E11D48;");
+                    }
+                }
+            }
             try {
                 int c = Integer.parseInt(copiesField.getText().trim());
                 if (c < 1) {
@@ -236,6 +300,9 @@ public class BookController {
         });
         titleField.textProperty().addListener((obs, o, n) -> { titleField.setStyle(""); formError.setVisible(false); formError.setManaged(false); });
         authorField.textProperty().addListener((obs, o, n) -> { authorField.setStyle(""); formError.setVisible(false); formError.setManaged(false); });
+        publisherField.textProperty().addListener((obs, o, n) -> { publisherField.setStyle(""); formError.setVisible(false); formError.setManaged(false); });
+        yearField.textProperty().addListener((obs, o, n) -> { yearField.setStyle(""); formError.setVisible(false); formError.setManaged(false); });
+        catCombo.valueProperty().addListener((obs, o, n) -> { catCombo.setStyle(""); formError.setVisible(false); formError.setManaged(false); });
         copiesField.textProperty().addListener((obs, o, n) -> { copiesField.setStyle(""); formError.setVisible(false); formError.setManaged(false); });
 
         dialog.setResultConverter(btnType -> {
@@ -245,8 +312,8 @@ public class BookController {
                 b.setTitle(titleField.getText().trim());
                 b.setAuthor(authorField.getText().trim());
                 b.setPublisher(publisherField.getText().trim());
-                try { b.setPublishYear(yearField.getText().isBlank() ? null : Integer.parseInt(yearField.getText().trim())); }
-                catch (NumberFormatException ignored) {}
+                String ys = yearField.getText().trim();
+                b.setPublishYear(ys.isEmpty() ? null : Integer.parseInt(ys));
                 b.setCategoryId(catCombo.getValue() != null ? catCombo.getValue().getId() : null);
                 try { b.setTotalCopies(Integer.parseInt(copiesField.getText().trim())); }
                 catch (NumberFormatException ignored) { b.setTotalCopies(1); }
@@ -259,9 +326,13 @@ public class BookController {
         Optional<Book> result = dialog.showAndWait();
         result.ifPresent(b -> {
             try {
-                if (isEdit) bookService.updateBook(b);
-                else        bookService.addBook(b);
-                loadBooks();
+                if (isEdit) {
+                    bookService.updateBook(b);
+                    loadBooks();
+                } else {
+                    bookService.addBook(b);
+                    loadBooksAfterAdd();
+                }
                 loadCategories();
                 showInfo(isEdit ? "Cập nhật sách thành công." : "Thêm sách thành công.");
             } catch (Exception e) {

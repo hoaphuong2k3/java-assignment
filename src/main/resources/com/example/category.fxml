@@ -27,8 +27,11 @@
             <placeholder><Label text="Chưa có danh mục nào"/></placeholder>
         </TableView>
 
-        <HBox spacing="8" alignment="CENTER_LEFT">
+        <HBox alignment="CENTER_LEFT" spacing="8">
             <Label fx:id="statusLabel" text="" style="-fx-text-fill: #64748B; -fx-font-size: 12px;" HBox.hgrow="ALWAYS"/>
+            <Button fx:id="prevPageBtn" text="← Trước" styleClass="btn-outline" onAction="#prevPage"/>
+            <Label fx:id="pageInfoLabel" text="Trang 1 / 1" style="-fx-font-size: 12px;"/>
+            <Button fx:id="nextPageBtn" text="Sau →" styleClass="btn-outline" onAction="#nextPage"/>
             <Button text="Xóa đã chọn" styleClass="btn-danger" onAction="#handleBulkDelete"
                     style="-fx-font-size:11px; -fx-padding:5 12 5 12;"/>
         </HBox>

@@ -46,7 +46,8 @@ public class MemberController {
 
     @FXML
     public void initialize() {
-        statusFilter.setItems(FXCollections.observableArrayList("Tất cả", "ACTIVE", "EXPIRED", "SUSPENDED"));
+        statusFilter.setItems(FXCollections.observableArrayList(
+            "Tất cả", "Hoạt động", "Hết hạn", "Đình chỉ"));
         statusFilter.setValue("Tất cả");
         setupColumns();
         memberService.syncExpiredStatuses();
@@ -68,16 +69,17 @@ public class MemberController {
         colEmail.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getEmail()));
         colExpiry.setCellValueFactory(c -> new SimpleStringProperty(
             c.getValue().getExpiryDate() != null ? c.getValue().getExpiryDate().toString() : ""));
-        colStatus.setCellValueFactory(c -> new SimpleStringProperty(c.getValue().getStatus().name()));
+        colStatus.setCellValueFactory(c -> new SimpleStringProperty(statusVietnamese(c.getValue().getStatus())));
         colStatus.setCellFactory(col -> new TableCell<>() {
             @Override protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) { setGraphic(null); setText(null); return; }
                 Label badge = new Label(item);
+                badge.getStyleClass().clear();
                 switch (item) {
-                    case "ACTIVE"    -> badge.getStyleClass().add("badge-success");
-                    case "EXPIRED"   -> badge.getStyleClass().add("badge-warning");
-                    case "SUSPENDED" -> badge.getStyleClass().add("badge-danger");
+                    case "Hoạt động" -> badge.getStyleClass().add("badge-success");
+                    case "Hết hạn"   -> badge.getStyleClass().add("badge-warning");
+                    case "Đình chỉ"  -> badge.getStyleClass().add("badge-danger");
                 }
                 setGraphic(badge);
             }
@@ -123,17 +125,38 @@ public class MemberController {
     @FXML
     private void handleSearch() { applyFilter(); }
 
+    private static String statusVietnamese(Member.Status s) {
+        return switch (s) {
+            case ACTIVE -> "Hoạt động";
+            case EXPIRED -> "Hết hạn";
+            case SUSPENDED -> "Đình chỉ";
+        };
+    }
+
+    private static boolean matchesMemberStatusFilter(Member m, String uiStatus) {
+        if (uiStatus == null || "Tất cả".equals(uiStatus)) return true;
+        return switch (uiStatus) {
+            case "Hoạt động" -> m.getStatus() == Member.Status.ACTIVE;
+            case "Hết hạn" -> m.getStatus() == Member.Status.EXPIRED;
+            case "Đình chỉ" -> m.getStatus() == Member.Status.SUSPENDED;
+            default -> m.getStatus().name().equals(uiStatus);
+        };
+    }
+
     private void applyFilter() {
         String kw = searchField.getText().toLowerCase().trim();
         String statusVal = statusFilter.getValue();
         filteredList = masterList.stream()
             .filter(m -> {
-                boolean statusOk = statusVal == null || "Tất cả".equals(statusVal)
-                    || m.getStatus().name().equals(statusVal);
+                boolean statusOk = matchesMemberStatusFilter(m, statusVal);
+                String email = m.getEmail() != null ? m.getEmail().toLowerCase() : "";
+                String phone = m.getPhone() != null ? m.getPhone().toLowerCase() : "";
                 boolean kwOk = kw.isEmpty()
                     || m.getFullName().toLowerCase().contains(kw)
                     || m.getMemberCode().toLowerCase().contains(kw)
-                    || m.getPhone().toLowerCase().contains(kw);
+                    || phone.contains(kw)
+                    || email.contains(kw)
+                    || statusVietnamese(m.getStatus()).toLowerCase().contains(kw);
                 return statusOk && kwOk;
             })
             .sorted(java.util.Comparator.comparing(Member::getFullName))
@@ -345,7 +368,7 @@ public class MemberController {
         Label roExpiry = new Label("Hạn thẻ: " + member.getExpiryDate());
         roExpiry.setStyle("-fx-font-weight: bold;");
         grid.add(roExpiry, 0, row++, 2, 1);
-        Label roStatus = new Label("Trạng thái: " + member.getStatus());
+        Label roStatus = new Label("Trạng thái: " + statusVietnamese(member.getStatus()));
         grid.add(roStatus, 0, row++, 2, 1);
 
         Label formError = new Label();

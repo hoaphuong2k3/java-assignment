@@ -42,7 +42,8 @@ public class BookDAO {
         b.setDescription(rs.getString("description"));
         b.setCoverImagePath(rs.getString("cover_image_path"));
         Timestamp del = rs.getTimestamp("deleted_at");
-        b.setDeleted(del != null);
+        if (del != null) b.setDeletedAt(del.toLocalDateTime());
+        else b.setDeletedAt(null);
         try { b.setCategoryName(rs.getString("category_name")); } catch (SQLException ignored) {}
         Timestamp ts = rs.getTimestamp("created_at");
         if (ts != null) b.setCreatedAt(ts.toLocalDateTime());
@@ -54,6 +55,24 @@ public class BookDAO {
     /**
      * Number of copies currently tied to open borrow rows (BORROWING, OVERDUE, LOST).
      */
+    /**
+     * Phiếu đang mượn hoặc quá hạn chưa trả (không gồm LOST — cho phép xóa sách mất).
+     */
+    public int countBorrowingOrOverdue(int bookId) {
+        String sql = """
+            SELECT COUNT(*) FROM borrow_records
+            WHERE book_id = ? AND status IN ('BORROWING','OVERDUE')
+            """;
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setInt(1, bookId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getInt(1);
+        } catch (SQLException e) {
+            throw new RuntimeException("Error counting active borrows for book", e);
+        }
+        return 0;
+    }
+
     public int countCopiesOut(int bookId) {
         String sql = """
             SELECT COUNT(*) FROM borrow_records
@@ -194,6 +213,32 @@ public class BookDAO {
         } catch (SQLException e) {
             throw new RuntimeException("Error decreasing total copies", e);
         }
+    }
+
+    /** Trùng ISBN (sách chưa xóa), bỏ qua id khi sửa. ISBN rỗng không kiểm tra. */
+    public boolean existsIsbnForOtherBook(String isbn, Integer excludeBookId) {
+        if (isbn == null || isbn.isBlank()) return false;
+        String norm = isbn.trim();
+        String sql = """
+            SELECT COUNT(*) FROM books
+            WHERE deleted_at IS NULL AND LOWER(TRIM(isbn)) = LOWER(?)
+            AND (? IS NULL OR id <> ?)
+            """;
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setString(1, norm);
+            if (excludeBookId == null) {
+                ps.setNull(2, Types.INTEGER);
+                ps.setNull(3, Types.INTEGER);
+            } else {
+                ps.setInt(2, excludeBookId);
+                ps.setInt(3, excludeBookId);
+            }
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getLong(1) > 0;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error checking ISBN uniqueness", e);
+        }
+        return false;
     }
 
     public long countTotal() {

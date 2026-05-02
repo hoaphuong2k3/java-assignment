@@ -38,6 +38,18 @@
                 <Label fx:id="lblOverdue" styleClass="stat-card-value" text="—" style="-fx-text-fill: #E11D48;"/>
                 <Label text="Đang quá hạn" styleClass="stat-card-label"/>
             </VBox>
+            <VBox styleClass="stat-card" HBox.hgrow="ALWAYS" spacing="6">
+                <Label fx:id="lblRenewalFees" styleClass="stat-card-value" text="—"/>
+                <Label text="Phí gia hạn thẻ (theo năm)" styleClass="stat-card-label"/>
+            </VBox>
+        </HBox>
+
+        <HBox spacing="12" alignment="CENTER_LEFT" style="-fx-padding: 0 0 0 4;">
+            <Label text="Mở thẻ — ngày đăng ký:" style="-fx-text-fill: #64748B;"/>
+            <DatePicker fx:id="memberJoinFrom" prefWidth="138" promptText="Từ ngày"/>
+            <Label text="đến" style="-fx-text-fill: #64748B;"/>
+            <DatePicker fx:id="memberJoinTo" prefWidth="138" promptText="Đến ngày"/>
+            <Label fx:id="lblJoinCount" text="Chọn khoảng ngày" style="-fx-font-size: 13px;"/>
         </HBox>
 
         <!-- Monthly BarChart -->

@@ -14,11 +14,18 @@ import javafx.scene.layout.VBox;
 
 import org.kordamp.ikonli.javafx.FontIcon;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class CategoryController {
+
+    private enum CategoryListSort {
+        AZ_BY_NAME,
+        NEWEST_FIRST
+    }
 
     @FXML private TextField  searchField;
     @FXML private TableView<Category> categoryTable;
@@ -29,6 +36,9 @@ public class CategoryController {
     @FXML private TableColumn<Category, String> colDesc;
     @FXML private TableColumn<Category, Void>   colCatActions;
     @FXML private Label      statusLabel;
+    @FXML private Button     prevPageBtn;
+    @FXML private Button     nextPageBtn;
+    @FXML private Label      pageInfoLabel;
 
     @FXML private Label      formTitle;
     @FXML private TextField  nameField;
@@ -37,6 +47,12 @@ public class CategoryController {
     @FXML private Button     deleteButton;
     @FXML private Label      formMessage;
 
+    private static final int PAGE_SIZE = 20;
+    private int currentPage = 0;
+    private List<Category> masterList   = new ArrayList<>();
+    private List<Category> filteredList = new ArrayList<>();
+    private CategoryListSort categoryListSort = CategoryListSort.AZ_BY_NAME;
+
     private final CategoryDAO categoryDAO = new CategoryDAO();
     private Category selectedCategory;
     private final Map<Integer, BooleanProperty> selectedMap = new HashMap<>();
@@ -44,7 +60,10 @@ public class CategoryController {
     @FXML
     public void initialize() {
         setupColumns();
-        searchField.textProperty().addListener((obs, o, n) -> handleSearch());
+        searchField.textProperty().addListener((obs, o, n) -> {
+            categoryListSort = CategoryListSort.AZ_BY_NAME;
+            applyFilter(true);
+        });
         loadCategories();
     }
 
@@ -75,7 +94,7 @@ public class CategoryController {
         colSTT.setCellFactory(col -> new TableCell<>() {
             @Override protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
-                setText(empty ? null : String.valueOf(getIndex() + 1));
+                setText(empty ? null : String.valueOf(currentPage * PAGE_SIZE + getIndex() + 1));
             }
         });
 
@@ -107,12 +126,51 @@ public class CategoryController {
         });
     }
 
+    private void rebuildFiltered() {
+        String kw = searchField.getText().trim().toLowerCase();
+        Comparator<Category> order = categoryListSort == CategoryListSort.NEWEST_FIRST
+            ? Comparator.comparing(Category::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed()
+                .thenComparing(Category::getName, String.CASE_INSENSITIVE_ORDER)
+            : Comparator.comparing(Category::getName, String.CASE_INSENSITIVE_ORDER);
+        filteredList = masterList.stream()
+            .filter(c -> kw.isEmpty() || c.getName().toLowerCase().contains(kw))
+            .sorted(order)
+            .toList();
+    }
+
+    /** @param resetPage đặt true khi đổi ô tìm kiếm; false khi reload để giữ trang hiện tại. */
+    private void applyFilter(boolean resetPage) {
+        rebuildFiltered();
+        if (resetPage) currentPage = 0;
+        else clampCurrentPage();
+        showPage();
+    }
+
+    private void clampCurrentPage() {
+        int totalPages = Math.max(1, (int) Math.ceil((double) filteredList.size() / PAGE_SIZE));
+        if (currentPage >= totalPages) currentPage = Math.max(0, totalPages - 1);
+    }
+
+    private void showPage() {
+        int from = currentPage * PAGE_SIZE;
+        int to   = Math.min(from + PAGE_SIZE, filteredList.size());
+        categoryTable.setItems(FXCollections.observableArrayList(
+            from < filteredList.size() ? filteredList.subList(from, to) : List.of()));
+        int totalPages = Math.max(1, (int) Math.ceil((double) filteredList.size() / PAGE_SIZE));
+        pageInfoLabel.setText("Trang " + (currentPage + 1) + " / " + totalPages);
+        statusLabel.setText(filteredList.size() + " danh mục");
+        prevPageBtn.setDisable(currentPage == 0);
+        nextPageBtn.setDisable((currentPage + 1) * PAGE_SIZE >= filteredList.size());
+        categoryTable.refresh();
+    }
+
+    @FXML private void prevPage() { if (currentPage > 0) { currentPage--; showPage(); } }
+    @FXML private void nextPage() { if ((currentPage + 1) * PAGE_SIZE < filteredList.size()) { currentPage++; showPage(); } }
+
     @FXML
     private void handleSearch() {
-        String kw = searchField.getText().trim();
-        List<Category> list = kw.isEmpty() ? categoryDAO.findAll() : categoryDAO.search(kw);
-        categoryTable.setItems(FXCollections.observableArrayList(list));
-        statusLabel.setText(list.size() + " danh mục");
+        categoryListSort = CategoryListSort.AZ_BY_NAME;
+        applyFilter(true);
     }
 
     @FXML
@@ -136,19 +194,26 @@ public class CategoryController {
             setMessage("Tên danh mục không được để trống.", true);
             return;
         }
+        Integer excludeId = selectedCategory == null ? null : selectedCategory.getId();
+        if (categoryDAO.existsNameForOtherCategory(name, excludeId)) {
+            setMessage("Tên danh mục đã tồn tại (không phân biệt chữ hoa/thường).", true);
+            return;
+        }
         try {
             if (selectedCategory == null) {
                 Category c = new Category(name, descField.getText().trim());
                 categoryDAO.save(c);
                 setMessage("Thêm danh mục thành công.", false);
+                handleClear();
+                loadCategoriesAfterAdd();
             } else {
                 selectedCategory.setName(name);
                 selectedCategory.setDescription(descField.getText().trim());
                 categoryDAO.update(selectedCategory);
                 setMessage("Cập nhật thành công.", false);
+                handleClear();
+                loadCategories();
             }
-            handleClear();
-            loadCategories();
         } catch (Exception e) {
             setMessage("Lỗi: " + e.getMessage(), true);
         }
@@ -157,6 +222,12 @@ public class CategoryController {
     @FXML
     private void handleDelete() {
         if (selectedCategory == null) return;
+        int active = categoryDAO.countBorrowingOrOverdueInCategory(selectedCategory.getId());
+        if (active > 0) {
+            setMessage("Không thể xóa danh mục: còn " + active
+                + " phiếu mượn đang mượn hoặc quá hạn chưa trả (sách trong danh mục).", true);
+            return;
+        }
         long bookCount = categoryDAO.countBooksInCategory(selectedCategory.getId());
         if (bookCount > 0) {
             Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
@@ -226,7 +297,12 @@ public class CategoryController {
             if (t != ButtonType.YES) return;
             int deleted = 0;
             int skipped = 0;
+            int blockedLoans = 0;
             for (int id : toDelete) {
+                if (categoryDAO.countBorrowingOrOverdueInCategory(id) > 0) {
+                    blockedLoans++;
+                    continue;
+                }
                 long n = categoryDAO.countBooksInCategory(id);
                 if (n == 0) {
                     categoryDAO.delete(id);
@@ -240,9 +316,10 @@ public class CategoryController {
             }
             selectedMap.clear();
             loadCategories();
-            String msg = "Đã xửa lý " + deleted + " danh mục.";
+            String msg = "Đã xử lý " + deleted + " danh mục.";
             if (skipped > 0) msg += " Bỏ qua " + skipped + " danh mục có sách (chưa tick xóa sách).";
-            setMessage(msg, skipped > 0);
+            if (blockedLoans > 0) msg += " Không xóa " + blockedLoans + " danh mục còn phiếu đang mượn/quá hạn.";
+            setMessage(msg, skipped > 0 || blockedLoans > 0);
         });
     }
 
@@ -292,9 +369,16 @@ public class CategoryController {
     }
 
     private void loadCategories() {
-        List<Category> list = categoryDAO.findAll();
-        categoryTable.setItems(FXCollections.observableArrayList(list));
-        statusLabel.setText(list.size() + " danh mục");
+        categoryListSort = CategoryListSort.AZ_BY_NAME;
+        masterList = categoryDAO.findAll();
+        applyFilter(false);
+    }
+
+    /** Sau thêm danh mục mới: mới nhất lên đầu, trang 1. */
+    private void loadCategoriesAfterAdd() {
+        categoryListSort = CategoryListSort.NEWEST_FIRST;
+        masterList = categoryDAO.findAll();
+        applyFilter(true);
     }
 
     private void setMessage(String msg, boolean isError) {

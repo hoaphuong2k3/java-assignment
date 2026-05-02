@@ -33,7 +33,8 @@ public class MemberDAO {
             m.setLostBookCount(0);
         }
         Timestamp del = rs.getTimestamp("deleted_at");
-        m.setDeleted(del != null);
+        if (del != null) m.setDeletedAt(del.toLocalDateTime());
+        else m.setDeletedAt(null);
         Timestamp ts = rs.getTimestamp("created_at");
         if (ts != null) m.setCreatedAt(ts.toLocalDateTime());
         ts = rs.getTimestamp("updated_at");

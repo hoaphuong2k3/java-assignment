@@ -3,10 +3,18 @@ package com.example.service;
 import com.example.dao.BookDAO;
 import com.example.model.Book;
 
+import java.time.Year;
 import java.util.List;
 import java.util.Optional;
 
 public class BookService {
+
+    public static final int PUBLISH_YEAR_MIN = 1000;
+
+    /** Cho phép tối đa năm sau (in sớm); tránh typo kiểu 22025. */
+    public static int publishYearMaxInclusive() {
+        return Year.now().getValue() + 1;
+    }
 
     private final BookDAO bookDAO;
 
@@ -55,10 +63,16 @@ public class BookService {
         bookDAO.update(book);
     }
 
-    /** Smoke delete: đánh dấu ẩn, không xóa hàng DB (giữ lịch sử mượn). */
+    /** Smoke delete: đánh dấu ẩn. Không cho xóa khi còn phiếu đang mượn/quá hạn; sách mất (LOST) vẫn xóa được. */
     public void deleteBook(int id) {
         bookDAO.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("Sách không tồn tại hoặc đã được ẩn."));
+        int active = bookDAO.countBorrowingOrOverdue(id);
+        if (active > 0) {
+            throw new IllegalStateException(
+                "Không thể xóa sách đang được mượn hoặc quá hạn chưa trả (" + active + " phiếu). "
+                    + "Chỉ có thể ẩn khi không còn phiếu đang mượn (trừ trường hợp đã ghi nhận mất sách).");
+        }
         bookDAO.softDelete(id);
     }
 
@@ -71,7 +85,26 @@ public class BookService {
             throw new IllegalArgumentException("Tên sách không được để trống.");
         if (book.getAuthor() == null || book.getAuthor().isBlank())
             throw new IllegalArgumentException("Tác giả không được để trống.");
+        if (book.getCategoryId() == null)
+            throw new IllegalArgumentException("Vui lòng chọn danh mục sách.");
+        if (book.getPublisher() == null || book.getPublisher().isBlank())
+            throw new IllegalArgumentException("Nhà xuất bản (NXB) không được để trống.");
         if (book.getTotalCopies() < 1)
             throw new IllegalArgumentException("Số lượng sách phải lớn hơn 0.");
+        Integer py = book.getPublishYear();
+        if (py != null) {
+            int max = publishYearMaxInclusive();
+            if (py < PUBLISH_YEAR_MIN || py > max) {
+                throw new IllegalArgumentException(
+                    "Năm xuất bản phải từ " + PUBLISH_YEAR_MIN + " đến " + max
+                        + " (4 chữ số), hoặc để trống.");
+            }
+        }
+        String isbn = book.getIsbn();
+        if (isbn != null && !isbn.isBlank()) {
+            Integer exclude = book.getId() > 0 ? book.getId() : null;
+            if (bookDAO.existsIsbnForOtherBook(isbn, exclude))
+                throw new IllegalArgumentException("ISBN đã tồn tại cho sách khác. Vui lòng kiểm tra lại.");
+        }
     }
 }

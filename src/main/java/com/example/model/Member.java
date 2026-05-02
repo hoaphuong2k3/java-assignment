@@ -18,8 +18,8 @@ public class Member {
     private Status status;
     /** Số lần mất sách (LOST); reset khi mở khóa thẻ có phí. */
     private int lostBookCount;
-    /** Soft delete: ẩn khỏi danh sách, không xóa hàng DB. */
-    private boolean deleted;
+    /** Soft delete: khớp cột `deleted_at` (null = chưa xóa). */
+    private LocalDateTime deletedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -72,8 +72,10 @@ public class Member {
     public int getLostBookCount() { return lostBookCount; }
     public void setLostBookCount(int lostBookCount) { this.lostBookCount = lostBookCount; }
 
-    public boolean isDeleted() { return deleted; }
-    public void setDeleted(boolean deleted) { this.deleted = deleted; }
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+
+    public boolean isDeleted() { return deletedAt != null; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

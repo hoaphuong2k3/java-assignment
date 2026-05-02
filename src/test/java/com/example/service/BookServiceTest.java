@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -32,8 +33,13 @@ class BookServiceTest {
         validBook.setId(1);
         validBook.setTitle("Clean Code");
         validBook.setAuthor("Robert Martin");
+        validBook.setCategoryId(1);
+        validBook.setPublisher("Prentice Hall");
         validBook.setTotalCopies(3);
         validBook.setAvailableCopies(3);
+
+        lenient().when(bookDAO.existsIsbnForOtherBook(anyString(), nullable(Integer.class))).thenReturn(false);
+        lenient().when(bookDAO.countBorrowingOrOverdue(anyInt())).thenReturn(0);
     }
 
     // --- getAllBooks ---
@@ -80,6 +86,8 @@ class BookServiceTest {
         Book toAdd = new Book();
         toAdd.setTitle("Design Patterns");
         toAdd.setAuthor("GoF");
+        toAdd.setCategoryId(2);
+        toAdd.setPublisher("Addison-Wesley");
         toAdd.setTotalCopies(5);
 
         bookService.addBook(toAdd);
@@ -111,10 +119,47 @@ class BookServiceTest {
     }
 
     @Test
+    void addBook_noCategory_throws() {
+        Book bad = new Book();
+        bad.setTitle("X");
+        bad.setAuthor("Y");
+        bad.setPublisher("Z");
+        bad.setTotalCopies(1);
+        assertThrows(IllegalArgumentException.class, () -> bookService.addBook(bad));
+        verify(bookDAO, never()).save(any());
+    }
+
+    @Test
+    void addBook_noPublisher_throws() {
+        Book bad = new Book();
+        bad.setTitle("X");
+        bad.setAuthor("Y");
+        bad.setCategoryId(1);
+        bad.setTotalCopies(1);
+        assertThrows(IllegalArgumentException.class, () -> bookService.addBook(bad));
+        verify(bookDAO, never()).save(any());
+    }
+
+    @Test
+    void addBook_duplicateIsbn_throws() {
+        when(bookDAO.existsIsbnForOtherBook(eq("DUP-ISBN"), isNull())).thenReturn(true);
+        Book b = new Book();
+        b.setTitle("T");
+        b.setAuthor("A");
+        b.setCategoryId(1);
+        b.setPublisher("P");
+        b.setTotalCopies(1);
+        assertThrows(IllegalArgumentException.class, () -> bookService.addBook(b));
+        verify(bookDAO, never()).save(any());
+    }
+
+    @Test
     void addBook_zeroCopies_throwsIllegalArgument() {
         Book bad = new Book();
         bad.setTitle("Some Book");
         bad.setAuthor("Author");
+        bad.setCategoryId(1);
+        bad.setPublisher("NXB");
         bad.setTotalCopies(0);
 
         assertThrows(IllegalArgumentException.class, () -> bookService.addBook(bad));
@@ -130,6 +175,8 @@ class BookServiceTest {
         existing.setId(1);
         existing.setTitle("Clean Code");
         existing.setAuthor("Robert Martin");
+        existing.setCategoryId(1);
+        existing.setPublisher("PH");
         existing.setTotalCopies(3);
         existing.setAvailableCopies(1);
 
@@ -141,6 +188,8 @@ class BookServiceTest {
         update.setId(1);
         update.setTitle("Clean Code");
         update.setAuthor("Robert Martin");
+        update.setCategoryId(1);
+        update.setPublisher("PH");
         update.setTotalCopies(5);
 
         bookService.updateBook(update);
@@ -157,6 +206,8 @@ class BookServiceTest {
         existing.setId(1);
         existing.setTitle("Clean Code");
         existing.setAuthor("Robert Martin");
+        existing.setCategoryId(1);
+        existing.setPublisher("PH");
         existing.setTotalCopies(3);
         existing.setAvailableCopies(0);
 
@@ -167,6 +218,8 @@ class BookServiceTest {
         update.setId(1);
         update.setTitle("Clean Code");
         update.setAuthor("Robert Martin");
+        update.setCategoryId(1);
+        update.setPublisher("PH");
         update.setTotalCopies(2); // less than borrowed (3)
 
         assertThrows(IllegalArgumentException.class, () -> bookService.updateBook(update));
@@ -181,6 +234,8 @@ class BookServiceTest {
         update.setId(99);
         update.setTitle("Ghost");
         update.setAuthor("Author");
+        update.setCategoryId(1);
+        update.setPublisher("P");
         update.setTotalCopies(1);
 
         assertThrows(IllegalArgumentException.class, () -> bookService.updateBook(update));
@@ -195,7 +250,17 @@ class BookServiceTest {
 
         bookService.deleteBook(1);
 
+        verify(bookDAO).countBorrowingOrOverdue(1);
         verify(bookDAO).softDelete(1);
+    }
+
+    @Test
+    void deleteBook_whenBorrowingOrOverdue_throws() {
+        when(bookDAO.findById(1)).thenReturn(Optional.of(validBook));
+        when(bookDAO.countBorrowingOrOverdue(1)).thenReturn(1);
+
+        assertThrows(IllegalStateException.class, () -> bookService.deleteBook(1));
+        verify(bookDAO, never()).softDelete(anyInt());
     }
 
     @Test

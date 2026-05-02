@@ -18,8 +18,8 @@ public class Book {
     private int availableCopies;
     private String description;
     private String coverImagePath;
-    /** Soft delete: ẩn khỏi danh sách, không xóa hàng DB. */
-    private boolean deleted;
+    /** Soft delete: khớp cột `deleted_at` (null = chưa xóa). */
+    private LocalDateTime deletedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -76,9 +76,11 @@ public class Book {
     public String getCoverImagePath() { return coverImagePath; }
     public void setCoverImagePath(String coverImagePath) { this.coverImagePath = coverImagePath; }
 
-    public boolean isDeleted() { return deleted; }
-    public void setDeleted(boolean deleted) { this.deleted = deleted; }
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
 
+    /** Đã đánh dấu xóa mềm khi `deleted_at` khác null. */
+    public boolean isDeleted() { return deletedAt != null; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
