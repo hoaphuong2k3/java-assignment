@@ -19,8 +19,8 @@ public class ReportService {
     public Map<String, Object> getDashboardStats() {
         Map<String, Object> stats = new LinkedHashMap<>();
         try {
-            stats.put("totalBooks",       queryLong("SELECT COUNT(*) FROM books WHERE deleted = FALSE"));
-            stats.put("totalMembers",     queryLong("SELECT COUNT(*) FROM members WHERE status='ACTIVE' AND deleted = FALSE"));
+            stats.put("totalBooks",       queryLong("SELECT COUNT(*) FROM books WHERE deleted_at IS NULL"));
+            stats.put("totalMembers",     queryLong("SELECT COUNT(*) FROM members WHERE status='ACTIVE' AND deleted_at IS NULL"));
             stats.put("activeBorrows",    queryLong("SELECT COUNT(*) FROM borrow_records WHERE status IN ('BORROWING','OVERDUE')"));
             stats.put("overdueCount",     queryLong("SELECT COUNT(*) FROM borrow_records WHERE status='OVERDUE' OR (status='BORROWING' AND due_date < CURDATE())"));
             stats.put("unpaidFines",      queryDecimal("SELECT COALESCE(SUM(amount),0) FROM fines WHERE paid=FALSE"));
@@ -113,7 +113,9 @@ public class ReportService {
         List<Map<String, Object>> result = new ArrayList<>();
         String sql = """
             SELECT c.name AS category, COUNT(b.id) AS book_count
-            FROM categories c LEFT JOIN books b ON b.category_id = c.id AND b.deleted = FALSE
+            FROM categories c
+            LEFT JOIN books b ON b.category_id = c.id AND b.deleted_at IS NULL
+            WHERE c.deleted_at IS NULL
             GROUP BY c.id, c.name
             ORDER BY book_count DESC
             """;

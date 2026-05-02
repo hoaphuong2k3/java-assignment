@@ -134,6 +134,7 @@ class BookServiceTest {
         existing.setAvailableCopies(1);
 
         when(bookDAO.findById(1)).thenReturn(Optional.of(existing));
+        when(bookDAO.countCopiesOut(1)).thenReturn(2);
 
         // update: new total=5
         Book update = new Book();
@@ -160,6 +161,7 @@ class BookServiceTest {
         existing.setAvailableCopies(0);
 
         when(bookDAO.findById(1)).thenReturn(Optional.of(existing));
+        when(bookDAO.countCopiesOut(1)).thenReturn(3);
 
         Book update = new Book();
         update.setId(1);

@@ -26,7 +26,7 @@ public class CategoryDAO {
 
     public List<Category> findAll() {
         List<Category> list = new ArrayList<>();
-        String sql = "SELECT * FROM categories ORDER BY name";
+        String sql = "SELECT * FROM categories WHERE deleted_at IS NULL ORDER BY name";
         try (Statement st = getConn().createStatement();
              ResultSet rs = st.executeQuery(sql)) {
             while (rs.next()) list.add(mapRow(rs));
@@ -37,7 +37,7 @@ public class CategoryDAO {
     }
 
     public Optional<Category> findById(int id) {
-        String sql = "SELECT * FROM categories WHERE id = ?";
+        String sql = "SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setInt(1, id);
             ResultSet rs = ps.executeQuery();
@@ -50,7 +50,7 @@ public class CategoryDAO {
 
     public List<Category> search(String keyword) {
         List<Category> list = new ArrayList<>();
-        String sql = "SELECT * FROM categories WHERE name LIKE ? ORDER BY name";
+        String sql = "SELECT * FROM categories WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setString(1, "%" + keyword + "%");
             ResultSet rs = ps.executeQuery();
@@ -87,7 +87,7 @@ public class CategoryDAO {
     }
 
     public void delete(int id) {
-        String sql = "DELETE FROM categories WHERE id=?";
+        String sql = "UPDATE categories SET deleted_at = CURRENT_TIMESTAMP WHERE id=? AND deleted_at IS NULL";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setInt(1, id);
             ps.executeUpdate();
@@ -97,7 +97,7 @@ public class CategoryDAO {
     }
 
     public long countBooksInCategory(int categoryId) {
-        String sql = "SELECT COUNT(*) FROM books WHERE category_id=? AND deleted = FALSE";
+        String sql = "SELECT COUNT(*) FROM books WHERE category_id=? AND deleted_at IS NULL";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setInt(1, categoryId);
             ResultSet rs = ps.executeQuery();
@@ -110,8 +110,8 @@ public class CategoryDAO {
 
     /** Soft-delete all books belonging to a category, then delete the category itself. */
     public void deleteWithBooks(int categoryId) {
-        String sqlBooks = "UPDATE books SET deleted=TRUE WHERE category_id=?";
-        String sqlCat   = "DELETE FROM categories WHERE id=?";
+        String sqlBooks = "UPDATE books SET deleted_at = CURRENT_TIMESTAMP WHERE category_id=? AND deleted_at IS NULL";
+        String sqlCat   = "UPDATE categories SET deleted_at = CURRENT_TIMESTAMP WHERE id=? AND deleted_at IS NULL";
         try (PreparedStatement ps1 = getConn().prepareStatement(sqlBooks);
              PreparedStatement ps2 = getConn().prepareStatement(sqlCat)) {
             ps1.setInt(1, categoryId); ps1.executeUpdate();
@@ -123,7 +123,15 @@ public class CategoryDAO {
 
     public List<com.example.model.Book> findBooksByCategory(int categoryId) {
         List<com.example.model.Book> list = new ArrayList<>();
-        String sql = "SELECT id, title, author, isbn, total_copies, available_copies FROM books WHERE category_id=? AND deleted=FALSE ORDER BY title";
+        String sql = """
+            SELECT b.id, b.title, b.author, b.isbn, b.total_copies,
+              (b.total_copies - COALESCE((
+                SELECT COUNT(*) FROM borrow_records br
+                WHERE br.book_id = b.id AND br.status IN ('BORROWING','OVERDUE','LOST')
+              ), 0)) AS available_copies
+            FROM books b
+            WHERE b.category_id=? AND b.deleted_at IS NULL ORDER BY b.title
+            """;
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setInt(1, categoryId);
             ResultSet rs = ps.executeQuery();
@@ -145,7 +153,7 @@ public class CategoryDAO {
 
     public void deleteMultiple(List<Integer> ids) {
         if (ids.isEmpty()) return;
-        String sql = "DELETE FROM categories WHERE id=?";
+        String sql = "UPDATE categories SET deleted_at = CURRENT_TIMESTAMP WHERE id=? AND deleted_at IS NULL";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             for (int id : ids) {
                 ps.setInt(1, id);

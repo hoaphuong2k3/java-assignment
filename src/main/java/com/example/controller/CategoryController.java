@@ -86,11 +86,12 @@ public class CategoryController {
             c.getValue().getDescription() != null ? c.getValue().getDescription() : ""));
 
         colCatActions.setCellFactory(col -> new TableCell<>() {
-            private final Button eyeBtn = new Button("Xem sách");
+            private final Button eyeBtn = new Button();
             {
-                FontIcon icon = new FontIcon("fas-book-open");
-                icon.setIconSize(12);
+                FontIcon icon = new FontIcon("fas-eye");
+                icon.setIconSize(14);
                 eyeBtn.setGraphic(icon);
+                eyeBtn.setTooltip(new Tooltip("Xem sách trong danh mục"));
                 eyeBtn.setStyle("-fx-font-size:11px; -fx-padding:4 8 4 8;");
                 eyeBtn.getStyleClass().add("btn-outline");
                 eyeBtn.setOnAction(e -> {
@@ -160,14 +161,25 @@ public class CategoryController {
         if (bookCount > 0) {
             Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
             alert.setTitle("Xóa danh mục");
-            alert.setHeaderText("Danh mục \"" + selectedCategory.getName() + "\" có " + bookCount + " sách.");
-            alert.setContentText("Xóa danh mục và toàn bộ sách trong danh mục?");
-            ButtonType deleteWithBooks = new ButtonType("Xóa cả " + bookCount + " sách",
-                                                        ButtonBar.ButtonData.YES);
-            ButtonType cancelType     = new ButtonType("Hủy", ButtonBar.ButtonData.CANCEL_CLOSE);
-            alert.getButtonTypes().setAll(deleteWithBooks, cancelType);
+            alert.setHeaderText("Danh mục này đang có " + bookCount + " sách.");
+            Label msg = new Label("Bạn có muốn xóa tất cả dữ liệu trong danh mục này không?");
+            msg.setWrapText(true);
+            CheckBox confirmBooks = new CheckBox("Delete All — xóa luôn " + bookCount + " sách trong danh mục");
+            confirmBooks.setWrapText(true);
+            Label note = new Label("Sách sẽ được đánh dấu ẩn (soft delete).");
+            note.setStyle("-fx-font-size:11px; -fx-text-fill:#64748B;");
+            VBox content = new VBox(8, msg, confirmBooks, note);
+            content.setPadding(new Insets(8));
+            alert.getDialogPane().setContent(content);
+            ButtonType proceed = new ButtonType("Xóa danh mục", ButtonBar.ButtonData.YES);
+            ButtonType cancel = new ButtonType("Hủy", ButtonBar.ButtonData.CANCEL_CLOSE);
+            alert.getButtonTypes().setAll(proceed, cancel);
             alert.showAndWait().ifPresent(t -> {
-                if (t == deleteWithBooks) {
+                if (t == proceed) {
+                    if (!confirmBooks.isSelected()) {
+                        setMessage("Vui lòng tick xác nhận xóa toàn bộ sách trong danh mục.", true);
+                        return;
+                    }
                     categoryDAO.deleteWithBooks(selectedCategory.getId());
                     setMessage("Đã xóa danh mục và " + bookCount + " sách.", false);
                     handleClear();
@@ -200,24 +212,37 @@ public class CategoryController {
             setMessage("Chưa chọn danh mục nào để xóa.", true);
             return;
         }
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-            "Xóa " + toDelete.size() + " danh mục đã chọn?\n" +
-            "Các danh mục có sách sẽ không bị xóa.",
-            ButtonType.YES, ButtonType.NO);
-        confirm.setHeaderText("Xóa hàng loạt");
+        CheckBox deleteBooksToo = new CheckBox("Cho phép xóa luôn sách trong danh mục có sách (soft delete)");
+        deleteBooksToo.setWrapText(true);
+        VBox box = new VBox(8,
+            new Label("Xóa " + toDelete.size() + " danh mục đã chọn?"), deleteBooksToo);
+        box.setPadding(new Insets(8));
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Xóa hàng loạt");
+        confirm.setHeaderText(null);
+        confirm.getDialogPane().setContent(box);
+        confirm.getButtonTypes().setAll(ButtonType.YES, ButtonType.NO);
         confirm.showAndWait().ifPresent(t -> {
-            if (t == ButtonType.YES) {
-                List<Integer> safeToDelete = toDelete.stream()
-                    .filter(id -> categoryDAO.countBooksInCategory(id) == 0)
-                    .toList();
-                int skipped = toDelete.size() - safeToDelete.size();
-                if (!safeToDelete.isEmpty()) categoryDAO.deleteMultiple(safeToDelete);
-                selectedMap.clear();
-                loadCategories();
-                String msg = "Đã xóa " + safeToDelete.size() + " danh mục.";
-                if (skipped > 0) msg += " Bỏ qua " + skipped + " danh mục có sách.";
-                setMessage(msg, skipped > 0);
+            if (t != ButtonType.YES) return;
+            int deleted = 0;
+            int skipped = 0;
+            for (int id : toDelete) {
+                long n = categoryDAO.countBooksInCategory(id);
+                if (n == 0) {
+                    categoryDAO.delete(id);
+                    deleted++;
+                } else if (deleteBooksToo.isSelected()) {
+                    categoryDAO.deleteWithBooks(id);
+                    deleted++;
+                } else {
+                    skipped++;
+                }
             }
+            selectedMap.clear();
+            loadCategories();
+            String msg = "Đã xửa lý " + deleted + " danh mục.";
+            if (skipped > 0) msg += " Bỏ qua " + skipped + " danh mục có sách (chưa tick xóa sách).";
+            setMessage(msg, skipped > 0);
         });
     }
 

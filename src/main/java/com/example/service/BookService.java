@@ -44,9 +44,9 @@ public class BookService {
 
     public void updateBook(Book book) {
         validateBook(book);
-        Book existing = bookDAO.findById(book.getId())
+        bookDAO.findById(book.getId())
             .orElseThrow(() -> new IllegalArgumentException("Sách không tồn tại."));
-        int borrowed = existing.getTotalCopies() - existing.getAvailableCopies();
+        int borrowed = bookDAO.countCopiesOut(book.getId());
         if (book.getTotalCopies() < borrowed) {
             throw new IllegalArgumentException(
                 "Số lượng mới (" + book.getTotalCopies() + ") thấp hơn số đang được mượn (" + borrowed + ").");

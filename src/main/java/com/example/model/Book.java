@@ -10,9 +10,11 @@ public class Book {
     private String author;
     private String publisher;
     private Integer publishYear;
-    private int categoryId;
+    /** Nullable when book has no category (matches DB FK). */
+    private Integer categoryId;
     private String categoryName;
     private int totalCopies;
+    /** Filled when loading from DB: total_copies minus open borrows (not a column). */
     private int availableCopies;
     private String description;
     private String coverImagePath;
@@ -24,7 +26,7 @@ public class Book {
     public Book() {}
 
     public Book(String isbn, String title, String author, String publisher,
-                Integer publishYear, int categoryId, int totalCopies, String description) {
+                Integer publishYear, Integer categoryId, int totalCopies, String description) {
         this.isbn = isbn;
         this.title = title;
         this.author = author;
@@ -56,8 +58,8 @@ public class Book {
     public Integer getPublishYear() { return publishYear; }
     public void setPublishYear(Integer publishYear) { this.publishYear = publishYear; }
 
-    public int getCategoryId() { return categoryId; }
-    public void setCategoryId(int categoryId) { this.categoryId = categoryId; }
+    public Integer getCategoryId() { return categoryId; }
+    public void setCategoryId(Integer categoryId) { this.categoryId = categoryId; }
 
     public String getCategoryName() { return categoryName; }
     public void setCategoryName(String categoryName) { this.categoryName = categoryName; }

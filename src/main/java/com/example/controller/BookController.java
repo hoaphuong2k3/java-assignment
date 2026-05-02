@@ -95,7 +95,8 @@ public class BookController {
         String kw       = searchField.getText().toLowerCase().trim();
         Category cat    = categoryFilter.getValue();
         filteredList = masterList.stream()
-            .filter(b -> (cat == null || b.getCategoryId() == cat.getId())
+            .filter(b -> (cat == null
+                          || (b.getCategoryId() != null && b.getCategoryId().intValue() == cat.getId()))
                       && (kw.isEmpty()
                           || b.getTitle().toLowerCase().contains(kw)
                           || b.getAuthor().toLowerCase().contains(kw)
@@ -178,8 +179,8 @@ public class BookController {
         TextArea  descArea      = new TextArea(isEdit ? book.getDescription() : "");
         ComboBox<Category> catCombo = new ComboBox<>();
         catCombo.getItems().addAll(categories);
-        if (isEdit) catCombo.getItems().stream()
-            .filter(c -> c.getId() == book.getCategoryId()).findFirst()
+        if (isEdit && book.getCategoryId() != null) catCombo.getItems().stream()
+            .filter(c -> c.getId() == book.getCategoryId().intValue()).findFirst()
             .ifPresent(catCombo::setValue);
 
         titleField.setPrefWidth(320);
@@ -246,7 +247,7 @@ public class BookController {
                 b.setPublisher(publisherField.getText().trim());
                 try { b.setPublishYear(yearField.getText().isBlank() ? null : Integer.parseInt(yearField.getText().trim())); }
                 catch (NumberFormatException ignored) {}
-                b.setCategoryId(catCombo.getValue() != null ? catCombo.getValue().getId() : 0);
+                b.setCategoryId(catCombo.getValue() != null ? catCombo.getValue().getId() : null);
                 try { b.setTotalCopies(Integer.parseInt(copiesField.getText().trim())); }
                 catch (NumberFormatException ignored) { b.setTotalCopies(1); }
                 b.setDescription(descArea.getText().trim());

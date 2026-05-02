@@ -58,7 +58,7 @@ class BorrowServiceTest {
     // ---- borrowBook ----
 
     @Test
-    void borrowBook_happyPath_savesRecordAndDecreasesAvailability() {
+    void borrowBook_happyPath_savesRecord_withoutTouchingStoredAvailability() {
         when(memberDAO.findById(1)).thenReturn(Optional.of(activeMember));
         when(bookDAO.findById(10)).thenReturn(Optional.of(availableBook));
         when(borrowDAO.findByMember(1)).thenReturn(List.of());
@@ -70,7 +70,6 @@ class BorrowServiceTest {
         assertEquals(10, result.getBookId());
         assertEquals(BorrowRecord.Status.BORROWING, result.getStatus());
         verify(borrowDAO).save(result);
-        verify(bookDAO).updateAvailableCopies(10, -1);
     }
 
     @Test
@@ -156,7 +155,6 @@ class BorrowServiceTest {
         assertTrue(fine.isEmpty());
         assertEquals(BorrowRecord.Status.RETURNED, record.getStatus());
         verify(borrowDAO).update(record);
-        verify(bookDAO).updateAvailableCopies(10, +1);
         verify(fineDAO, never()).save(any());
     }
 
@@ -213,6 +211,8 @@ class BorrowServiceTest {
         assertEquals(BorrowRecord.Status.LOST, record.getStatus());
         verify(bookDAO).decreaseTotalCopies(10);
         verify(fineDAO).save(fine);
+        verify(memberDAO).incrementLostBookCount(1);
+        verify(memberDAO).suspendIfLostThreshold(1, BorrowService.LOST_BOOKS_SUSPEND_THRESHOLD);
     }
 
     @Test
@@ -225,7 +225,8 @@ class BorrowServiceTest {
         when(borrowDAO.findById(301)).thenReturn(Optional.of(record));
 
         Fine fine = borrowService.markAsLost(301);
-        assertEquals(BorrowService.LOST_BOOK_FEE, fine.getAmount());
+        // 6 ngày quá hạn × 5000 + 200000 bồi thường
+        assertEquals(new BigDecimal("230000"), fine.getAmount());
     }
 
     @Test

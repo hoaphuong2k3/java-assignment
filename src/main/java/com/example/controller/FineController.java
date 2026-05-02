@@ -126,8 +126,15 @@ public class FineController {
                     || f.getBookTitle().toLowerCase().contains(kw)
                     || f.getMemberCode().toLowerCase().contains(kw);
                 boolean dateOk = true;
-                if (from != null && f.getDueDate() != null) dateOk = !f.getDueDate().isBefore(from);
-                if (to   != null && f.getDueDate() != null) dateOk = dateOk && !f.getDueDate().isAfter(to);
+                LocalDate createdDay = f.getCreatedAt() != null ? f.getCreatedAt().toLocalDate() : null;
+                if (from != null) {
+                    if (createdDay == null) dateOk = false;
+                    else dateOk = !createdDay.isBefore(from);
+                }
+                if (to != null && dateOk) {
+                    if (createdDay == null) dateOk = false;
+                    else dateOk = !createdDay.isAfter(to);
+                }
                 return paidOk && kwOk && dateOk;
             })
             .toList();
@@ -152,9 +159,10 @@ public class FineController {
     @FXML private void nextPage() { if ((currentPage + 1) * PAGE_SIZE < filteredList.size()) { currentPage++; showPage(); } }
 
     private void handleMarkPaid(Fine fine) {
+        String bookLine = fine.getBookTitle() != null ? fine.getBookTitle() : "—";
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
             "Xác nhận đã thu phí phạt " + currencyFormat.format(fine.getAmount()) + "đ\n" +
-            "Từ: " + fine.getMemberName() + "\nSách: " + fine.getBookTitle(),
+            "Từ: " + fine.getMemberName() + "\nSách / dịch vụ: " + bookLine,
             ButtonType.YES, ButtonType.NO);
         confirm.setHeaderText("Thu phí phạt");
         confirm.showAndWait().ifPresent(t -> {

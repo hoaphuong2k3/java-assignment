@@ -16,6 +16,8 @@ public class Member {
     private LocalDate joinDate;
     private LocalDate expiryDate;
     private Status status;
+    /** Số lần mất sách (LOST); reset khi mở khóa thẻ có phí. */
+    private int lostBookCount;
     /** Soft delete: ẩn khỏi danh sách, không xóa hàng DB. */
     private boolean deleted;
     private LocalDateTime createdAt;
@@ -66,6 +68,9 @@ public class Member {
 
     public Status getStatus() { return status; }
     public void setStatus(Status status) { this.status = status; }
+
+    public int getLostBookCount() { return lostBookCount; }
+    public void setLostBookCount(int lostBookCount) { this.lostBookCount = lostBookCount; }
 
     public boolean isDeleted() { return deleted; }
     public void setDeleted(boolean deleted) { this.deleted = deleted; }

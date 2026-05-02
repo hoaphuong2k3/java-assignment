@@ -27,15 +27,23 @@ public class MemberDAO {
         Date expiryDate = rs.getDate("expiry_date");
         if (expiryDate != null) m.setExpiryDate(expiryDate.toLocalDate());
         m.setStatus(Member.Status.valueOf(rs.getString("status")));
-        try { m.setDeleted(rs.getBoolean("deleted")); } catch (SQLException ignored) { m.setDeleted(false); }
+        try {
+            m.setLostBookCount(rs.getInt("lost_book_count"));
+        } catch (SQLException e) {
+            m.setLostBookCount(0);
+        }
+        Timestamp del = rs.getTimestamp("deleted_at");
+        m.setDeleted(del != null);
         Timestamp ts = rs.getTimestamp("created_at");
         if (ts != null) m.setCreatedAt(ts.toLocalDateTime());
+        ts = rs.getTimestamp("updated_at");
+        if (ts != null) m.setUpdatedAt(ts.toLocalDateTime());
         return m;
     }
 
     public List<Member> findAll() {
         List<Member> list = new ArrayList<>();
-        String sql = "SELECT * FROM members WHERE deleted = FALSE ORDER BY full_name";
+        String sql = "SELECT * FROM members WHERE deleted_at IS NULL ORDER BY full_name";
         try (Statement st = getConn().createStatement();
              ResultSet rs = st.executeQuery(sql)) {
             while (rs.next()) list.add(mapRow(rs));
@@ -46,7 +54,7 @@ public class MemberDAO {
     }
 
     public Optional<Member> findById(int id) {
-        String sql = "SELECT * FROM members WHERE id = ? AND deleted = FALSE";
+        String sql = "SELECT * FROM members WHERE id = ? AND deleted_at IS NULL";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setInt(1, id);
             ResultSet rs = ps.executeQuery();
@@ -58,7 +66,7 @@ public class MemberDAO {
     }
 
     public Optional<Member> findByCode(String code) {
-        String sql = "SELECT * FROM members WHERE member_code = ? AND deleted = FALSE";
+        String sql = "SELECT * FROM members WHERE member_code = ? AND deleted_at IS NULL";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setString(1, code);
             ResultSet rs = ps.executeQuery();
@@ -72,7 +80,7 @@ public class MemberDAO {
     public List<Member> search(String keyword) {
         List<Member> list = new ArrayList<>();
         String sql = """
-            SELECT * FROM members WHERE deleted = FALSE
+            SELECT * FROM members WHERE deleted_at IS NULL
             AND (full_name LIKE ? OR member_code LIKE ? OR email LIKE ? OR phone LIKE ?)
             ORDER BY full_name
             """;
@@ -108,7 +116,7 @@ public class MemberDAO {
     }
 
     public void update(Member member) {
-        String sql = "UPDATE members SET full_name=?, email=?, phone=?, address=?, expiry_date=?, status=? WHERE id=? AND deleted = FALSE";
+        String sql = "UPDATE members SET full_name=?, email=?, phone=?, address=?, expiry_date=?, status=? WHERE id=? AND deleted_at IS NULL";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setString(1, member.getFullName());
             ps.setString(2, member.getEmail());
@@ -125,7 +133,7 @@ public class MemberDAO {
 
     /** Soft delete: ẩn đọc giả, giữ FK phiếu mượn. */
     public void softDelete(int id) {
-        String sql = "UPDATE members SET deleted = TRUE WHERE id = ? AND deleted = FALSE";
+        String sql = "UPDATE members SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setInt(1, id);
             ps.executeUpdate();
@@ -136,7 +144,7 @@ public class MemberDAO {
 
     public long countTotal() {
         try (Statement st = getConn().createStatement();
-             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM members WHERE deleted = FALSE")) {
+             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM members WHERE deleted_at IS NULL")) {
             if (rs.next()) return rs.getLong(1);
         } catch (SQLException e) {
             throw new RuntimeException("Error counting members", e);
@@ -157,5 +165,54 @@ public class MemberDAO {
             throw new RuntimeException("Error generating member code", e);
         }
         return "TV001";
+    }
+
+    /** Chỉ cập nhật thông tin liên hệ (không đổi hạn thẻ / trạng thái qua màn hình sửa). */
+    public void updatePersonalInfo(int id, String fullName, String email, String phone, String address) {
+        String sql = "UPDATE members SET full_name=?, email=?, phone=?, address=? WHERE id=? AND deleted_at IS NULL";
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setString(1, fullName);
+            ps.setString(2, email);
+            ps.setString(3, phone);
+            ps.setString(4, address);
+            ps.setInt(5, id);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error updating member personal info", e);
+        }
+    }
+
+    public void incrementLostBookCount(int memberId) {
+        String sql = "UPDATE members SET lost_book_count = lost_book_count + 1 WHERE id = ? AND deleted_at IS NULL";
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setInt(1, memberId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error incrementing lost book count", e);
+        }
+    }
+
+    public void suspendIfLostThreshold(int memberId, int threshold) {
+        String sql = "UPDATE members SET status = 'SUSPENDED' WHERE id = ? AND deleted_at IS NULL AND lost_book_count >= ? AND status <> 'SUSPENDED'";
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setInt(1, memberId);
+            ps.setInt(2, threshold);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error suspending member", e);
+        }
+    }
+
+    /** Sau khi đóng phí mở khóa: ACTIVE và reset bộ đếm mất sách. */
+    public void unlockSuspendedCard(int memberId) {
+        String sql = "UPDATE members SET status = 'ACTIVE', lost_book_count = 0 WHERE id = ? AND status = 'SUSPENDED' AND deleted_at IS NULL";
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setInt(1, memberId);
+            int n = ps.executeUpdate();
+            if (n == 0)
+                throw new RuntimeException("Không thể mở khóa: đọc giả không tồn tại hoặc không bị khóa thẻ.");
+        } catch (SQLException e) {
+            throw new RuntimeException("Error unlocking member card", e);
+        }
     }
 }

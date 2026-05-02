@@ -1,5 +1,6 @@
 package com.example.controller;
 
+import com.example.model.Fine;
 import com.example.model.Member;
 import com.example.service.MemberService;
 import javafx.beans.property.SimpleStringProperty;
@@ -10,10 +11,11 @@ import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 
+import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+import java.util.Locale;
 
 public class MemberController {
 
@@ -39,6 +41,8 @@ public class MemberController {
     private List<Member>   filteredList  = new ArrayList<>();
 
     private final MemberService memberService = new MemberService();
+    private final com.example.dao.FineDAO fineDAO = new com.example.dao.FineDAO();
+    private final NumberFormat moneyFmt = NumberFormat.getNumberInstance(new Locale("vi", "VN"));
 
     @FXML
     public void initialize() {
@@ -82,21 +86,36 @@ public class MemberController {
             private final Button editBtn   = new Button("Sửa");
             private final Button renewBtn  = new Button("Gia hạn");
             private final Button deleteBtn = new Button("Xóa");
-            private final HBox   box       = new HBox(6, editBtn, renewBtn, deleteBtn);
+            private final Button unlockBtn = new Button("Mở khóa");
+            private final HBox   box       = new HBox(6, editBtn, renewBtn, deleteBtn, unlockBtn);
             {
-                editBtn.getStyleClass().add("btn-outline");
-                editBtn.setStyle("-fx-font-size:11px; -fx-padding:4 8 4 8;");
-                renewBtn.getStyleClass().add("btn-warning");
+                for (Button b : new Button[]{ editBtn, renewBtn, deleteBtn, unlockBtn }) {
+                    b.getStyleClass().add("btn-outline");
+                    b.setStyle("-fx-font-size:11px; -fx-padding:4 8 4 8;");
+                }
+                renewBtn.getStyleClass().setAll("btn-warning");
                 renewBtn.setStyle("-fx-font-size:11px; -fx-padding:4 8 4 8;");
-                deleteBtn.getStyleClass().add("btn-outline");
-                deleteBtn.setStyle("-fx-font-size:11px; -fx-padding:4 8 4 8;");
+                unlockBtn.getStyleClass().setAll("btn-success");
                 editBtn.setOnAction(e -> handleEdit(getTableView().getItems().get(getIndex())));
                 renewBtn.setOnAction(e -> handleRenew(getTableView().getItems().get(getIndex())));
                 deleteBtn.setOnAction(e -> handleDelete(getTableView().getItems().get(getIndex())));
+                unlockBtn.setOnAction(e -> handleUnlock(getTableView().getItems().get(getIndex())));
             }
             @Override protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
-                setGraphic(empty ? null : box);
+                if (empty) { setGraphic(null); return; }
+                int idx = getIndex();
+                if (idx < 0 || idx >= getTableView().getItems().size()) { setGraphic(null); return; }
+                Member m = getTableView().getItems().get(idx);
+                boolean expired = m.getStatus() == Member.Status.EXPIRED;
+                boolean suspended = m.getStatus() == Member.Status.SUSPENDED;
+                renewBtn.setVisible(expired);
+                renewBtn.setManaged(expired);
+                deleteBtn.setVisible(expired);
+                deleteBtn.setManaged(expired);
+                unlockBtn.setVisible(suspended);
+                unlockBtn.setManaged(suspended);
+                setGraphic(box);
             }
         });
     }
@@ -146,23 +165,63 @@ public class MemberController {
 
     @FXML
     private void handleAdd() {
-        showMemberDialog(null);
+        showNewMemberDialog();
     }
 
     private void handleEdit(Member member) {
-        showMemberDialog(member);
+        showEditMemberDialog(member);
     }
 
     private void handleRenew(Member member) {
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-            "Gia hạn thẻ cho \"" + member.getFullName() + "\" thêm 2 năm?",
+            "Gia hạn thẻ cho \"" + member.getFullName() + "\" với phí "
+                + moneyFmt.format(MemberService.RENEW_CARD_FEE) + "đ?\n"
+                + "Thời hạn mới: " + MemberService.MEMBERSHIP_EXTENSION_YEARS + " năm kể từ hôm nay.",
             ButtonType.YES, ButtonType.NO);
         confirm.setHeaderText("Gia hạn thẻ đọc giả");
         confirm.showAndWait().ifPresent(t -> {
-            if (t == ButtonType.YES) {
-                memberService.renewCard(member.getId(), 2);
+            if (t != ButtonType.YES) return;
+            try {
+                Fine fine = memberService.renewExpiredCardWithFee(member.getId());
                 loadMembers();
-                showInfo("Đã gia hạn thẻ thành công.");
+                showPayFineDialog(fine, "Thu phí gia hạn thẻ");
+            } catch (Exception e) { showError(e.getMessage()); }
+        });
+    }
+
+    private void handleUnlock(Member member) {
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+            "Mở khóa thẻ cho \"" + member.getFullName() + "\" với phí "
+                + moneyFmt.format(MemberService.UNLOCK_CARD_FEE) + "đ?\n"
+                + "Bộ đếm mất sách sẽ được reset.",
+            ButtonType.YES, ButtonType.NO);
+        confirm.setHeaderText("Mở khóa thẻ");
+        confirm.showAndWait().ifPresent(t -> {
+            if (t != ButtonType.YES) return;
+            try {
+                Fine fine = memberService.unlockSuspendedCardWithFee(member.getId());
+                loadMembers();
+                showPayFineDialog(fine, "Thu phí mở khóa thẻ");
+            } catch (Exception e) { showError(e.getMessage()); }
+        });
+    }
+
+    private void showPayFineDialog(Fine fine, String title) {
+        Alert payDialog = new Alert(Alert.AlertType.CONFIRMATION);
+        payDialog.setTitle(title);
+        payDialog.setHeaderText(null);
+        payDialog.setContentText(
+            "Số tiền: " + moneyFmt.format(fine.getAmount()) + "đ\n"
+            + "Lý do: " + fine.getReason() + "\n\nĐã thu tiền?");
+        ButtonType payNow   = new ButtonType("Đã thu", ButtonBar.ButtonData.YES);
+        ButtonType payLater = new ButtonType("Chưa thu", ButtonBar.ButtonData.NO);
+        payDialog.getButtonTypes().setAll(payNow, payLater);
+        payDialog.showAndWait().ifPresent(p -> {
+            if (p == payNow) {
+                fineDAO.markAsPaid(fine.getId());
+                showInfo("Đã ghi nhận thanh toán.");
+            } else {
+                showInfo("Phí chưa thu — có thể thu sau tại mục Phí phạt.");
             }
         });
     }
@@ -183,12 +242,10 @@ public class MemberController {
         });
     }
 
-    private void showMemberDialog(Member member) {
-        boolean isEdit = (member != null);
+    private void showNewMemberDialog() {
         Dialog<Member> dialog = new Dialog<>();
-        dialog.setTitle(isEdit ? "Cập nhật đọc giả" : "Thêm đọc giả mới");
+        dialog.setTitle("Thêm đọc giả mới");
         dialog.setHeaderText(null);
-
         ButtonType saveType = new ButtonType("Lưu", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
 
@@ -196,27 +253,21 @@ public class MemberController {
         grid.setHgap(12); grid.setVgap(12);
         grid.setPadding(new Insets(20));
 
-        TextField nameField    = new TextField(isEdit ? member.getFullName() : "");
-        TextField emailField   = new TextField(isEdit ? member.getEmail()    : "");
-        TextField phoneField   = new TextField(isEdit ? member.getPhone()    : "");
-        TextArea  addrField    = new TextArea(isEdit ? member.getAddress()   : "");
-        DatePicker expiryPicker = new DatePicker(isEdit ? member.getExpiryDate() : LocalDate.now().plusYears(2));
-        ComboBox<Member.Status> statusCombo = new ComboBox<>();
-        statusCombo.getItems().addAll(Member.Status.values());
-        statusCombo.setValue(isEdit ? member.getStatus() : Member.Status.ACTIVE);
-
-        nameField.setPrefWidth(280);
+        TextField nameField  = new TextField();
+        TextField emailField = new TextField();
+        TextField phoneField = new TextField();
+        TextArea  addrField  = new TextArea();
         addrField.setPrefRowCount(2);
 
-        grid.add(new Label("Họ tên *:"),     0, 0); grid.add(nameField,    1, 0);
-        grid.add(new Label("Email:"),         0, 1); grid.add(emailField,   1, 1);
-        grid.add(new Label("Số điện thoại:"),0, 2); grid.add(phoneField,   1, 2);
-        grid.add(new Label("Địa chỉ:"),      0, 3); grid.add(addrField,    1, 3);
-        grid.add(new Label("Hạn thẻ:"),      0, 4); grid.add(expiryPicker, 1, 4);
-        if (isEdit) {
-            grid.add(new Label("Trạng thái:"), 0, 5);
-            grid.add(statusCombo,               1, 5);
-        }
+        grid.add(new Label("Họ tên *:"),       0, 0); grid.add(nameField,  1, 0);
+        grid.add(new Label("Email:"),          0, 1); grid.add(emailField, 1, 1);
+        grid.add(new Label("Số điện thoại:"), 0, 2); grid.add(phoneField, 1, 2);
+        grid.add(new Label("Địa chỉ:"),       0, 3); grid.add(addrField,  1, 3);
+        Label hint = new Label("Thẻ đọc: miễn phí " + MemberService.MEMBERSHIP_EXTENSION_YEARS
+            + " năm kể từ ngày đăng ký.");
+        hint.setWrapText(true);
+        hint.setStyle("-fx-text-fill:#64748B; -fx-font-size:12px;");
+        grid.add(hint, 0, 4, 2, 1);
 
         Label formError = new Label();
         formError.setVisible(false);
@@ -224,27 +275,13 @@ public class MemberController {
         formError.setWrapText(true);
         formError.setMaxWidth(320);
         formError.setStyle("-fx-text-fill: #E11D48; -fx-font-size: 12px;");
-        grid.add(formError, 0, isEdit ? 6 : 5, 2, 1);
+        grid.add(formError, 0, 5, 2, 1);
 
         dialog.getDialogPane().setContent(grid);
 
         Button saveBtn = (Button) dialog.getDialogPane().lookupButton(saveType);
         saveBtn.addEventFilter(javafx.event.ActionEvent.ACTION, evt -> {
-            List<String> errs = new ArrayList<>();
-            if (nameField.getText().isBlank()) {
-                errs.add("• Họ tên không được để trống.");
-                nameField.setStyle("-fx-border-color: #E11D48;");
-            }
-            String email = emailField.getText().trim();
-            if (!email.isEmpty() && !email.matches("^[\\w+.-]+@[\\w.-]+\\.[a-zA-Z]{2,}$")) {
-                errs.add("• Email không đúng định dạng.");
-                emailField.setStyle("-fx-border-color: #E11D48;");
-            }
-            String phone = phoneField.getText().trim();
-            if (!phone.isEmpty() && !phone.matches("^(0|\\+84)\\d{9,10}$")) {
-                errs.add("• Số điện thoại không hợp lệ (bắt đầu 0 hoặc +84, 10-11 chữ số).");
-                phoneField.setStyle("-fx-border-color: #E11D48;");
-            }
+            List<String> errs = validateMemberForm(nameField, emailField, phoneField);
             if (!errs.isEmpty()) {
                 formError.setText(String.join("\n", errs));
                 formError.setVisible(true);
@@ -252,34 +289,118 @@ public class MemberController {
                 evt.consume();
             }
         });
-        nameField.textProperty().addListener((obs, o, n) -> { nameField.setStyle(""); formError.setVisible(false); formError.setManaged(false); });
-        emailField.textProperty().addListener((obs, o, n) -> { emailField.setStyle(""); formError.setVisible(false); formError.setManaged(false); });
-        phoneField.textProperty().addListener((obs, o, n) -> { phoneField.setStyle(""); formError.setVisible(false); formError.setManaged(false); });
 
         dialog.setResultConverter(bt -> {
-            if (bt == saveType) {
-                Member m = isEdit ? member : new Member();
-                m.setFullName(nameField.getText().trim());
-                m.setEmail(emailField.getText().trim());
-                m.setPhone(phoneField.getText().trim());
-                m.setAddress(addrField.getText().trim());
-                m.setExpiryDate(expiryPicker.getValue());
-                m.setStatus(statusCombo.getValue());
-                if (!isEdit) m.setJoinDate(LocalDate.now());
-                return m;
-            }
-            return null;
+            if (bt != saveType) return null;
+            Member m = new Member();
+            m.setFullName(nameField.getText().trim());
+            m.setEmail(emailField.getText().trim());
+            m.setPhone(phoneField.getText().trim());
+            m.setAddress(addrField.getText().trim());
+            return m;
         });
 
-        Optional<Member> result = dialog.showAndWait();
-        result.ifPresent(m -> {
+        dialog.showAndWait().ifPresent(m -> {
             try {
-                if (isEdit) memberService.updateMember(m);
-                else        memberService.addMember(m);
+                memberService.addMember(m);
                 loadMembers();
-                showInfo(isEdit ? "Cập nhật thành công." : "Thêm đọc giả thành công.");
+                showInfo("Thêm đọc giả thành công. Mã thẻ: " + m.getMemberCode());
             } catch (Exception e) { showError(e.getMessage()); }
         });
+    }
+
+    private void showEditMemberDialog(Member member) {
+        Dialog<Member> dialog = new Dialog<>();
+        dialog.setTitle("Cập nhật đọc giả");
+        dialog.setHeaderText(null);
+        ButtonType saveType = new ButtonType("Lưu", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(12); grid.setVgap(12);
+        grid.setPadding(new Insets(20));
+
+        TextField nameField  = new TextField(member.getFullName());
+        TextField emailField = new TextField(member.getEmail());
+        TextField phoneField = new TextField(member.getPhone());
+        TextArea  addrField  = new TextArea(member.getAddress() != null ? member.getAddress() : "");
+        addrField.setPrefRowCount(2);
+
+        int row = 0;
+        grid.add(new Label("Họ tên *:"), 0, row); grid.add(nameField, 1, row++);
+        grid.add(new Label("Email:"), 0, row); grid.add(emailField, 1, row++);
+        grid.add(new Label("Số điện thoại:"), 0, row); grid.add(phoneField, 1, row++);
+        grid.add(new Label("Địa chỉ:"), 0, row); grid.add(addrField, 1, row++);
+
+        Label hint = new Label();
+        hint.setWrapText(true);
+        hint.setStyle("-fx-text-fill:#64748B; -fx-font-size:12px;");
+        if (member.getStatus() == Member.Status.SUSPENDED) {
+            hint.setText("Thẻ đang khóa — chỉ sửa thông tin liên hệ. Để mở khóa: dùng nút \"Mở khóa\" và đóng phí.");
+        } else if (member.getStatus() == Member.Status.EXPIRED || member.getStatus() == Member.Status.ACTIVE) {
+            hint.setText("Hạn thẻ và trạng thái chỉ thay đổi qua gia hạn / hệ thống (không sửa trực tiếp).");
+        }
+        grid.add(hint, 0, row++, 2, 1);
+
+        Label roExpiry = new Label("Hạn thẻ: " + member.getExpiryDate());
+        roExpiry.setStyle("-fx-font-weight: bold;");
+        grid.add(roExpiry, 0, row++, 2, 1);
+        Label roStatus = new Label("Trạng thái: " + member.getStatus());
+        grid.add(roStatus, 0, row++, 2, 1);
+
+        Label formError = new Label();
+        formError.setVisible(false);
+        formError.setManaged(false);
+        formError.setWrapText(true);
+        formError.setMaxWidth(320);
+        formError.setStyle("-fx-text-fill: #E11D48; -fx-font-size: 12px;");
+        grid.add(formError, 0, row, 2, 1);
+
+        dialog.getDialogPane().setContent(grid);
+
+        Button saveBtn = (Button) dialog.getDialogPane().lookupButton(saveType);
+        saveBtn.addEventFilter(javafx.event.ActionEvent.ACTION, evt -> {
+            List<String> errs = validateMemberForm(nameField, emailField, phoneField);
+            if (!errs.isEmpty()) {
+                formError.setText(String.join("\n", errs));
+                formError.setVisible(true);
+                formError.setManaged(true);
+                evt.consume();
+            }
+        });
+
+        int memberId = member.getId();
+        dialog.setResultConverter(bt -> {
+            if (bt != saveType) return null;
+            Member m = new Member();
+            m.setId(memberId);
+            m.setFullName(nameField.getText().trim());
+            m.setEmail(emailField.getText().trim());
+            m.setPhone(phoneField.getText().trim());
+            m.setAddress(addrField.getText().trim());
+            return m;
+        });
+
+        dialog.showAndWait().ifPresent(m -> {
+            try {
+                memberService.updateMember(m);
+                loadMembers();
+                showInfo("Cập nhật thành công.");
+            } catch (Exception e) { showError(e.getMessage()); }
+        });
+    }
+
+    private List<String> validateMemberForm(TextField nameField, TextField emailField, TextField phoneField) {
+        List<String> errs = new ArrayList<>();
+        if (nameField.getText().isBlank())
+            errs.add("• Họ tên không được để trống.");
+        String email = emailField.getText().trim();
+        if (!email.isEmpty() && !email.matches("^[\\w+.-]+@[\\w.-]+\\.[a-zA-Z]{2,}$"))
+            errs.add("• Email không đúng định dạng.");
+        String phone = phoneField.getText().trim();
+        if (!phone.isEmpty() && !phone.matches("^(0|\\+84)\\d{9,10}$"))
+            errs.add("• Số điện thoại không hợp lệ (0 hoặc +84, 10–11 chữ số).");
+        return errs;
     }
 
     private void showError(String msg) {

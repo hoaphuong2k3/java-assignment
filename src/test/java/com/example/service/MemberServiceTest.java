@@ -93,6 +93,7 @@ class MemberServiceTest {
         assertEquals("M002", newMember.getMemberCode());
         assertEquals(Member.Status.ACTIVE, newMember.getStatus());
         assertNotNull(newMember.getJoinDate());
+        assertEquals(LocalDate.now().plusYears(MemberService.MEMBERSHIP_EXTENSION_YEARS), newMember.getExpiryDate());
         verify(memberDAO).save(newMember);
     }
 
@@ -106,8 +107,7 @@ class MemberServiceTest {
 
         memberService.addMember(newMember);
 
-        assertNotNull(newMember.getExpiryDate());
-        assertTrue(newMember.getExpiryDate().isAfter(LocalDate.now()));
+        assertEquals(LocalDate.now().plusYears(MemberService.MEMBERSHIP_EXTENSION_YEARS), newMember.getExpiryDate());
         verify(memberDAO).save(newMember);
     }
 
@@ -136,7 +136,8 @@ class MemberServiceTest {
 
         memberService.updateMember(existingMember);
 
-        verify(memberDAO).update(existingMember);
+        verify(memberDAO).updatePersonalInfo(eq(1), eq("Tran Thi B"), eq("b@test.com"),
+            eq("0901000001"), anyString());
     }
 
     @Test
@@ -148,18 +149,27 @@ class MemberServiceTest {
         ghost.setFullName("Ghost");
 
         assertThrows(IllegalArgumentException.class, () -> memberService.updateMember(ghost));
-        verify(memberDAO, never()).update(any());
+        verify(memberDAO, never()).updatePersonalInfo(anyInt(), any(), any(), any(), any());
     }
 
     // ---- deleteMember ----
 
     @Test
-    void deleteMember_existingMember_callsSoftDelete() {
+    void deleteMember_expired_callsSoftDelete() {
+        existingMember.setStatus(Member.Status.EXPIRED);
         when(memberDAO.findById(1)).thenReturn(Optional.of(existingMember));
 
         memberService.deleteMember(1);
 
         verify(memberDAO).softDelete(1);
+    }
+
+    @Test
+    void deleteMember_active_throwsIllegalState() {
+        when(memberDAO.findById(1)).thenReturn(Optional.of(existingMember));
+
+        assertThrows(IllegalStateException.class, () -> memberService.deleteMember(1));
+        verify(memberDAO, never()).softDelete(anyInt());
     }
 
     @Test

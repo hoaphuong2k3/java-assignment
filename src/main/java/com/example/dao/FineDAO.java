@@ -15,10 +15,28 @@ public class FineDAO {
         return DatabaseConfig.getInstance().getConnection();
     }
 
+    /**
+     * Phiếu mượn (có thể borrow_record_id NULL khi phí chỉ gắn member_id).
+     */
+    private static final String JOIN_SQL = """
+        SELECT f.*,
+               m.full_name   AS member_name,
+               m.member_code AS member_code,
+               COALESCE(b.title, '—') AS book_title,
+               br.borrow_date, br.due_date, br.return_date
+        FROM fines f
+        LEFT JOIN borrow_records br ON f.borrow_record_id = br.id
+        JOIN members m ON m.id = COALESCE(f.member_id, br.member_id)
+        LEFT JOIN books b ON br.book_id = b.id
+        """;
+
     private Fine mapRow(ResultSet rs) throws SQLException {
         Fine f = new Fine();
         f.setId(rs.getInt("id"));
-        f.setBorrowRecordId(rs.getInt("borrow_record_id"));
+        int brid = rs.getInt("borrow_record_id");
+        f.setBorrowRecordId(rs.wasNull() ? null : brid);
+        int mid = rs.getInt("member_id");
+        f.setMemberId(rs.wasNull() ? null : mid);
         f.setAmount(rs.getBigDecimal("amount"));
         f.setReason(rs.getString("reason"));
         f.setPaid(rs.getBoolean("paid"));
@@ -37,20 +55,10 @@ public class FineDAO {
         } catch (SQLException ignored) {}
         Timestamp ts = rs.getTimestamp("created_at");
         if (ts != null) f.setCreatedAt(ts.toLocalDateTime());
+        ts = rs.getTimestamp("updated_at");
+        if (ts != null) f.setUpdatedAt(ts.toLocalDateTime());
         return f;
     }
-
-    private static final String JOIN_SQL = """
-        SELECT f.*,
-               m.full_name   AS member_name,
-               m.member_code AS member_code,
-               b.title       AS book_title,
-               br.borrow_date, br.due_date, br.return_date
-        FROM fines f
-        JOIN borrow_records br ON f.borrow_record_id = br.id
-        JOIN members m         ON br.member_id = m.id
-        JOIN books   b         ON br.book_id   = b.id
-        """;
 
     public List<Fine> findAll() {
         List<Fine> list = new ArrayList<>();
@@ -103,12 +111,15 @@ public class FineDAO {
     }
 
     public void save(Fine fine) {
-        String sql = "INSERT INTO fines (borrow_record_id, amount, reason, paid) VALUES (?,?,?,?)";
+        String sql = "INSERT INTO fines (borrow_record_id, member_id, amount, reason, paid) VALUES (?,?,?,?,?)";
         try (PreparedStatement ps = getConn().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            ps.setInt(1, fine.getBorrowRecordId());
-            ps.setBigDecimal(2, fine.getAmount());
-            ps.setString(3, fine.getReason());
-            ps.setBoolean(4, fine.isPaid());
+            if (fine.getBorrowRecordId() != null) ps.setInt(1, fine.getBorrowRecordId());
+            else ps.setNull(1, Types.INTEGER);
+            if (fine.getMemberId() != null) ps.setInt(2, fine.getMemberId());
+            else ps.setNull(2, Types.INTEGER);
+            ps.setBigDecimal(3, fine.getAmount());
+            ps.setString(4, fine.getReason());
+            ps.setBoolean(5, fine.isPaid());
             ps.executeUpdate();
             ResultSet keys = ps.getGeneratedKeys();
             if (keys.next()) fine.setId(keys.getInt(1));
@@ -144,7 +155,7 @@ public class FineDAO {
 
     public List<Fine> findByDateRange(java.time.LocalDate from, java.time.LocalDate to) {
         List<Fine> list = new ArrayList<>();
-        String sql = JOIN_SQL + " WHERE br.borrow_date BETWEEN ? AND ? ORDER BY f.created_at DESC";
+        String sql = JOIN_SQL + " WHERE DATE(f.created_at) BETWEEN ? AND ? ORDER BY f.created_at DESC";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setDate(1, Date.valueOf(from));
             ps.setDate(2, Date.valueOf(to));

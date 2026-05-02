@@ -7,7 +7,9 @@ import java.time.LocalDateTime;
 public class Fine {
 
     private int id;
-    private int borrowRecordId;
+    /** Nullable when fine is phí thẻ đọc giả (gia hạn / mở khóa). */
+    private Integer borrowRecordId;
+    private Integer memberId;
     private BigDecimal amount;
     private String reason;
     private boolean paid;
@@ -25,18 +27,34 @@ public class Fine {
 
     public Fine() {}
 
-    public Fine(int borrowRecordId, BigDecimal amount, String reason) {
-        this.borrowRecordId = borrowRecordId;
-        this.amount = amount;
-        this.reason = reason;
-        this.paid = false;
+    /** Phí gắn với phiếu mượn (quá hạn, mất sách, …). */
+    public static Fine forBorrowRecord(int borrowRecordId, BigDecimal amount, String reason) {
+        Fine f = new Fine();
+        f.setBorrowRecordId(borrowRecordId);
+        f.setAmount(amount);
+        f.setReason(reason);
+        f.setPaid(false);
+        return f;
+    }
+
+    /** Phí chỉ gắn đọc giả (gia hạn thẻ, mở khóa thẻ). */
+    public static Fine forMember(int memberId, BigDecimal amount, String reason) {
+        Fine f = new Fine();
+        f.setMemberId(memberId);
+        f.setAmount(amount);
+        f.setReason(reason);
+        f.setPaid(false);
+        return f;
     }
 
     public int getId() { return id; }
     public void setId(int id) { this.id = id; }
 
-    public int getBorrowRecordId() { return borrowRecordId; }
-    public void setBorrowRecordId(int borrowRecordId) { this.borrowRecordId = borrowRecordId; }
+    public Integer getBorrowRecordId() { return borrowRecordId; }
+    public void setBorrowRecordId(Integer borrowRecordId) { this.borrowRecordId = borrowRecordId; }
+
+    public Integer getMemberId() { return memberId; }
+    public void setMemberId(Integer memberId) { this.memberId = memberId; }
 
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }

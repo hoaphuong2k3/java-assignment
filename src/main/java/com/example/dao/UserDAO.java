@@ -25,6 +25,8 @@ public class UserDAO {
         u.setActive(rs.getBoolean("active"));
         Timestamp ts = rs.getTimestamp("created_at");
         if (ts != null) u.setCreatedAt(ts.toLocalDateTime());
+        ts = rs.getTimestamp("updated_at");
+        if (ts != null) u.setUpdatedAt(ts.toLocalDateTime());
         return u;
     }
 

@@ -49,7 +49,7 @@ public class BorrowRecordDAO {
 
     public List<BorrowRecord> findAll() {
         List<BorrowRecord> list = new ArrayList<>();
-        String sql = JOIN_SQL + " ORDER BY br.borrow_date DESC";
+        String sql = JOIN_SQL + " ORDER BY br.borrow_date DESC, br.id DESC";
         try (Statement st = getConn().createStatement();
              ResultSet rs = st.executeQuery(sql)) {
             while (rs.next()) list.add(mapRow(rs));
@@ -73,7 +73,7 @@ public class BorrowRecordDAO {
 
     public List<BorrowRecord> findByMember(int memberId) {
         List<BorrowRecord> list = new ArrayList<>();
-        String sql = JOIN_SQL + " WHERE br.member_id = ? ORDER BY br.borrow_date DESC";
+        String sql = JOIN_SQL + " WHERE br.member_id = ? ORDER BY br.borrow_date DESC, br.id DESC";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setInt(1, memberId);
             ResultSet rs = ps.executeQuery();
@@ -110,7 +110,7 @@ public class BorrowRecordDAO {
 
     public List<BorrowRecord> search(String keyword) {
         List<BorrowRecord> list = new ArrayList<>();
-        String sql = JOIN_SQL + " WHERE m.full_name LIKE ? OR m.member_code LIKE ? OR b.title LIKE ? ORDER BY br.borrow_date DESC";
+        String sql = JOIN_SQL + " WHERE m.full_name LIKE ? OR m.member_code LIKE ? OR b.title LIKE ? ORDER BY br.borrow_date DESC, br.id DESC";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             String kw = "%" + keyword + "%";
             ps.setString(1, kw); ps.setString(2, kw); ps.setString(3, kw);
@@ -187,7 +187,7 @@ public class BorrowRecordDAO {
 
     public List<BorrowRecord> findByDateRange(java.time.LocalDate from, java.time.LocalDate to) {
         List<BorrowRecord> list = new ArrayList<>();
-        String sql = JOIN_SQL + " WHERE br.borrow_date BETWEEN ? AND ? ORDER BY br.borrow_date DESC";
+        String sql = JOIN_SQL + " WHERE br.borrow_date BETWEEN ? AND ? ORDER BY br.borrow_date DESC, br.id DESC";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             ps.setDate(1, Date.valueOf(from));
             ps.setDate(2, Date.valueOf(to));
@@ -202,7 +202,7 @@ public class BorrowRecordDAO {
     public List<BorrowRecord> searchWithDateRange(String keyword, java.time.LocalDate from, java.time.LocalDate to) {
         List<BorrowRecord> list = new ArrayList<>();
         String sql = JOIN_SQL + " WHERE (m.full_name LIKE ? OR m.member_code LIKE ? OR b.title LIKE ?)" +
-                     " AND br.borrow_date BETWEEN ? AND ? ORDER BY br.borrow_date DESC";
+                     " AND br.borrow_date BETWEEN ? AND ? ORDER BY br.borrow_date DESC, br.id DESC";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             String kw = "%" + keyword + "%";
             ps.setString(1, kw); ps.setString(2, kw); ps.setString(3, kw);
@@ -212,6 +212,33 @@ public class BorrowRecordDAO {
             while (rs.next()) list.add(mapRow(rs));
         } catch (SQLException e) {
             throw new RuntimeException("Error searching borrow records with date range", e);
+        }
+        return list;
+    }
+
+    /** Gia hạn mượn: chỉ khi đang BORROWING. */
+    public void updateDueDate(int id, java.time.LocalDate newDueDate) {
+        String sql = "UPDATE borrow_records SET due_date=? WHERE id=? AND status='BORROWING'";
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setDate(1, Date.valueOf(newDueDate));
+            ps.setInt(2, id);
+            int n = ps.executeUpdate();
+            if (n == 0) throw new SQLException("No BORROWING record with id " + id);
+        } catch (SQLException e) {
+            throw new RuntimeException("Error updating due date", e);
+        }
+    }
+
+    /** Quá hạn (OVERDUE) và đã trễ hơn {@code minDaysPastDue} ngày kể từ hạn trả. */
+    public List<BorrowRecord> findOverdueBeyondDays(int minDaysPastDue) {
+        List<BorrowRecord> list = new ArrayList<>();
+        String sql = JOIN_SQL + " WHERE br.status='OVERDUE' AND DATEDIFF(CURDATE(), br.due_date) > ? ORDER BY br.due_date";
+        try (PreparedStatement ps = getConn().prepareStatement(sql)) {
+            ps.setInt(1, minDaysPastDue);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) list.add(mapRow(rs));
+        } catch (SQLException e) {
+            throw new RuntimeException("Error finding long overdue records", e);
         }
         return list;
     }
