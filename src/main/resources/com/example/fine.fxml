@@ -22,7 +22,7 @@
 
     <!-- Toolbar -->
     <HBox spacing="12" alignment="CENTER_LEFT">
-        <TextField fx:id="searchField" promptText="Tìm theo tên đọc giả, tên sách..."
+        <TextField fx:id="searchField" promptText="Tìm đọc giả, sách, lý do (gia hạn, mở khóa, phạt…)"
                    styleClass="search-field" HBox.hgrow="ALWAYS"/>
         <ComboBox fx:id="paidFilter" promptText="Tất cả" prefWidth="160"/>
     </HBox>

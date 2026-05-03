@@ -98,10 +98,10 @@ public class FineDAO {
 
     public List<Fine> search(String keyword) {
         List<Fine> list = new ArrayList<>();
-        String sql = JOIN_SQL + " WHERE m.full_name LIKE ? OR m.member_code LIKE ? OR b.title LIKE ? ORDER BY f.created_at DESC";
+        String sql = JOIN_SQL + " WHERE m.full_name LIKE ? OR m.member_code LIKE ? OR b.title LIKE ? OR f.reason LIKE ? ORDER BY f.created_at DESC";
         try (PreparedStatement ps = getConn().prepareStatement(sql)) {
             String kw = "%" + keyword + "%";
-            ps.setString(1, kw); ps.setString(2, kw); ps.setString(3, kw);
+            ps.setString(1, kw); ps.setString(2, kw); ps.setString(3, kw); ps.setString(4, kw);
             ResultSet rs = ps.executeQuery();
             while (rs.next()) list.add(mapRow(rs));
         } catch (SQLException e) {
